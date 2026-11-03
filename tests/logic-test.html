@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Logic tests</title>
+<style>body{font:14px/1.6 Consolas,monospace;margin:20px}.f{color:#b00}.p{color:#075}</style>
+</head>
+<body>
+<h1 id="sum">running</h1>
+<pre id="out"></pre>
+<script src="../listening/data.js"></script>
+<script src="../listening/core.js"></script>
+<script src="../listening/summary-data.js"></script>
+<script src="../listening/summary-core.js"></script>
+<script>
+(function () {
+  "use strict";
+  const C = window.WLIU_LISTENING_CORE;
+  const lines = []; let pass = 0, fail = 0;
+  function eq(name, got, want) {
+    const a = JSON.stringify(got), b = JSON.stringify(want);
+    if (a === b) pass++; else { fail++; lines.push("FAIL " + name + ": got " + a + " want " + b); }
+  }
+  const byWord = (w) => C.ITEMS.find((it) => it.word === w);
+
+  /* data contract */
+  eq("lists", C.LISTS.length, 20);
+  eq("each list has 25", C.LISTS.every((l) => l[1].length === 25), true);
+  eq("items", C.ITEMS.length, 500);
+  eq("unique words", new Set(C.ITEMS.map((i) => i.word)).size, 500);
+  eq("alt keys", Object.keys(window.WLIU_LISTENING_DATA.alt).length, 15);
+  eq("homo keys", Object.keys(window.WLIU_LISTENING_DATA.homo).length, 17);
+  eq("alt keys in lists", Object.keys(window.WLIU_LISTENING_DATA.alt).every(byWord), true);
+  eq("homo keys in lists", Object.keys(window.WLIU_LISTENING_DATA.homo).every(byWord), true);
+  eq("space or hyphen", C.ITEMS.filter((i) => /[ -]/.test(i.word)).length, 30);
+  eq("capitals", C.ITEMS.filter((i) => /[A-Z]/.test(i.word)).length, 4);
+  eq("only duplicate zh", Object.keys(C.ZH_COUNT).filter((z) => C.ZH_COUNT[z] > 1), ["风景"]);
+  eq("id format", C.ITEMS[26].id, "2-2");
+
+  /* schedule constants */
+  eq("learnDay 1", C.learnDay(1), 1); eq("learnDay 5", C.learnDay(5), 5); eq("learnDay 6", C.learnDay(6), 8);
+  eq("learnDay 20", C.learnDay(20), 26); eq("LAST_DAY", C.LAST_DAY, 41);
+
+  /* grading */
+  const g = (w, s, m) => C.grade(s, byWord(w), m || "audio").r;
+  const firstWord = (re) => C.ITEMS.find((i) => re.test(i.word)).word;
+  eq("check in near", g(firstWord(/^check-in$/i) , "check in"), "near");
+  eq("wednesday ok", g("Wednesday", "wednesday"), "ok");
+  const homoKey = "fare" in window.WLIU_LISTENING_DATA.homo ? "fare" : Object.keys(window.WLIU_LISTENING_DATA.homo)[0];
+  const homoVal = window.WLIU_LISTENING_DATA.homo[homoKey][0];
+  eq("fair homo in audio", g(homoKey, homoVal, "audio"), "homo");
+  eq("fair bad in zh", g(homoKey, homoVal, "zh"), "bad");
+  const licWord = Object.keys(window.WLIU_LISTENING_DATA.alt).find((k) => window.WLIU_LISTENING_DATA.alt[k].indexOf("license") !== -1);
+  eq("license alt", licWord ? g(licWord, "license") : "alt", "alt");
+  eq("empty", g("Wednesday", "   "), "empty");
+  eq("wrong", g("Wednesday", "wensday"), "bad");
+  eq("curly quote norm", C.norm("it’s"), "it's");
+  eq("dash norm", C.norm("a–b"), "a-b");
+  eq("minus norm", C.norm("a−b"), "a-b");
+  eq("space collapse", C.norm("  a   B "), "a b");
+  eq("isRight skip", C.isRight({ r: "skip" }), false);
+  eq("isRight homo", C.isRight({ r: "homo" }), true);
+
+  /* correction markup */
+  eq("fix missing", C.fixHTML("acommodation", "accommodation"), "ac<ins>c</ins>ommodation");
+  eq("fix extra", C.fixHTML("accommmodation", "accommodation").replace(/<\/?del>/g, "|"), "accomm|m|odation");
+  eq("fix empty", C.fixHTML("  ", "word"), null);
+  eq("fix too far", C.fixHTML("zzz", "accommodation"), null);
+  eq("fix escapes", C.fixHTML("<ab", "ab"), "<del>&lt;</del>ab");
+  eq("fix long lowercase char", C.fixHTML("receiptİ", "receipt"), "receipt<del>İ</del>");
+  eq("fix nbsp", C.fixHTML("check in", "check in").indexOf(" ") !== -1, true);
+
+  /* dates */
+  eq("DST diff (Sydney April)", C.diffDays("2026-04-04", "2026-04-05"), 1);
+  eq("DST diff (Sydney October)", C.diffDays("2026-10-03", "2026-10-05"), 2);
+  eq("strict rejects month 13", C.strictISO("2026-13-45"), false);
+  eq("loose accepts month 13", C.validISO("2026-13-45"), true);
+  eq("strict accepts real", C.strictISO("2026-11-02"), true);
+  const year = new Date().getFullYear();
+  eq("start rejects typed-in-progress year", C.plausibleStart("0002-11-02"), false);
+  eq("start rejects old year", C.plausibleStart("1999-12-31"), false);
+  eq("start rejects far future", C.plausibleStart((year + 6) + "-01-01"), false);
+  eq("start rejects empty", C.plausibleStart(""), false);
+  eq("start accepts this year", C.plausibleStart(year + "-03-02"), true);
+
+  /* plan over simulated days */
+  const addDays = (s, n) => { const d = C.parseISO(s); d.setDate(d.getDate() + n); return C.iso(d); };
+  const START = "2026-03-02";
+  function world(start) {
+    let S = C.blank(); S.start = start; let now = start;
+    const m = C.model(() => S, () => now);
+    return { m, S: () => S, set: (v) => { S = v; }, go: (n) => { now = addDays(start, n - 1); }, now: () => now };
+  }
+  const types = (p) => p.tasks.map((t) => t.type + t.k).join(",");
+
+  let w = world(START);
+  w.go(1); eq("day1 new", types(w.m.plan()), "new1");
+  w.S().l[1] = [w.now()];
+  eq("day1 stays after finish", types(w.m.plan()), "new1");
+  w.go(2); eq("day2 new+review", types(w.m.plan()), "new2,review1");
+  eq("first review whole list", w.m.taskItems({ type: "review", k: 1 }).length, 25);
+  w.go(6); eq("weekend gap has no new; L1 gone", types(w.m.plan()).indexOf("new"), -1);
+
+  w = world(START);
+  w.S().l[1] = [START, addDays(START, 1), addDays(START, 2)];
+  w.S().w["1-3"] = [0, 1, START];
+  w.go(5);
+  w.go(3); /* day 3 with two earlier sessions: not the first review, only wrong words */
+  eq("later review only wrong", w.m.taskItems({ type: "review", k: 1 }).map((i) => i.id), ["1-3"]);
+
+  /* a missed list becomes catch-up, and review days do not shift */
+  w = world(START);
+  w.go(3);
+  eq("missed lists catch up", types(w.m.plan()), "new3,catch1,catch2");
+  w.S().l[1] = [w.now()];
+  eq("catch stays visible today", types(w.m.plan()), "new3,catch1,catch2");
+  w.go(5);
+  eq("review follows original day", types(w.m.plan()).indexOf("review1") !== -1, true);
+  w = world(START); w.S().l[1] = [START]; w.go(4);
+  eq("missed review does not carry", types(w.m.plan()).indexOf("review1"), -1);
+
+  /* bounds */
+  w = world(START); w.go(41); eq("day 41 in range", w.m.plan().N, 41);
+  w.go(42); eq("day 42 empty", w.m.plan().tasks.length, 0);
+  w = world(START); w.go(0);
+  eq("future start N<1", w.m.plan().N < 1, true);
+  eq("future start has no tasks", w.m.plan().tasks.length, 0);
+  let nostart = C.blank(); const ns = C.model(() => nostart, () => START);
+  eq("no start is day 1", ns.dayNo(), 1);
+
+  /* every list reviewed on exactly the five offsets across the schedule */
+  [1, 7, 20].forEach((k) => {
+    const v = world(START); v.S().l[k] = [addDays(START, C.learnDay(k) - 1)];
+    const hits = [];
+    for (let n = 1; n <= 41; n++) { v.go(n); if (v.m.plan().tasks.some((t) => t.type === "review" && t.k === k)) hits.push(n - C.learnDay(k)); }
+    eq("review offsets L" + k, hits, [1, 2, 4, 7, 15]);
+  });
+
+  /* state validation */
+  eq("sane rejects v2", C.sane({ v: 2 }), null);
+  eq("sane drops unknown id", Object.keys(C.sane({ v: 1, w: { "1-1": [1, 0, "2026-01-01"], "99-1": [1, 0, ""], constructor: [0, 1, ""] } }).w), ["1-1"]);
+  const proto = C.parseImport('{"v":1,"__proto__":{"polluted":1},"w":{"__proto__":[1,1,""]},"l":{"__proto__":["2026-11-01"]},"last":{"__proto__":[1,1,""]}}').state;
+  eq("import ignores __proto__", ({}).polluted, undefined);
+  eq("import __proto__ keeps prototype", Object.getPrototypeOf(proto.l) === Object.prototype, true);
+  const padded = C.parseImport(JSON.stringify({ v: 1, l: { "01": ["2026-11-01"], "0020": ["2026-11-01"], 2: ["2026-11-01"] }, last: { "01": [1, 1, "2026-11-01"] } })).state;
+  eq("padded list keys dropped", Object.keys(padded.l), ["2"]);
+  eq("padded last keys dropped", Object.keys(padded.last), []);
+
+  /* import */
+  const good = { v: 1, start: "2026-11-01", u: 5, w: { "1-1": [0, 2, "2026-11-01"] }, l: { 1: ["2026-11-01"] }, last: { 1: [20, 25, "2026-11-01"] } };
+  eq("bare state", C.parseImport(JSON.stringify(good)).state.start, "2026-11-01");
+  eq("keeps u", C.parseImport(JSON.stringify(good)).state.u, 5);
+  const env = C.parseImport(JSON.stringify({ app: "ielts-dictation", exportedAt: "x", state: good, prefs: { mode: "zh", accent: "nope" } }));
+  eq("envelope state", env.state.w["1-1"], [0, 2, "2026-11-01"]);
+  eq("envelope prefs revalidated", env.prefs, { mode: "zh", accent: "en-GB" });
+  eq("other app rejected", C.parseImport(JSON.stringify({ app: "other", state: good })), null);
+  eq("garbage rejected", C.parseImport("not json"), null);
+  eq("array rejected", C.parseImport("[1,2]"), null);
+  eq("number rejected", C.parseImport("3"), null);
+  eq("no version rejected", C.parseImport("{}"), null);
+  const dirty = C.parseImport(JSON.stringify({ v: 1, start: "2026-13-45", l: { 0: ["2026-11-01"], 21: ["2026-11-01"], 3: ["2026-13-45", "2026-11-01"], abc: ["2026-11-01"] }, last: { 25: [1, 1, "2026-11-01"] }, w: { "1-1": [1, -3, "2026-13-45"] } })).state;
+  eq("bad start dropped", dirty.start, null);
+  eq("bad list keys dropped", Object.keys(dirty.l), ["3"]);
+  eq("bad date filtered", dirty.l[3], ["2026-11-01"]);
+  eq("bad last dropped", Object.keys(dirty.last), []);
+  eq("bad w values cleaned", dirty.w["1-1"], [1, 0, ""]);
+
+  /* rank: every boundary, from both sides */
+  eq("exp max", C.EXP_MAX, 500);
+  [[0, "一阶"], [1, "一阶"], [49, "一阶"], [50, "二阶"], [51, "二阶"], [149, "二阶"], [150, "三阶"], [249, "三阶"], [250, "四阶"], [349, "四阶"], [350, "五阶"], [449, "五阶"], [450, "六阶"], [499, "六阶"], [500, "六阶"]].forEach((c) => {
+    eq("rank at " + c[0], C.rankOf(c[0]).rank, c[1]);
+  });
+  eq("rank order", C.RANKS, [["一阶", 0], ["二阶", 50], ["三阶", 150], ["四阶", 250], ["五阶", 350], ["六阶", 450]]);
+  eq("rank bad input", [C.rankOf(-5).rank, C.rankOf(NaN).rank, C.rankOf(undefined).rank], ["一阶", "一阶", "一阶"]);
+  eq("rank next", [C.rankOf(49).next, C.rankOf(49).nextAt, C.rankOf(49).toNext], ["二阶", 50, 1]);
+  eq("rank at 50 next", [C.rankOf(50).next, C.rankOf(50).toNext], ["三阶", 100]);
+  eq("top rank has no next", [C.rankOf(450).next, C.rankOf(450).nextAt, C.rankOf(450).toNext], [null, null, 0]);
+  eq("rank is pure", JSON.stringify(C.rankOf(200)) === JSON.stringify(C.rankOf(200)), true);
+
+  /* rank-up only when a boundary is really crossed upward */
+  eq("rankUp 49 to 50", C.rankUp(49, 50), "二阶");
+  eq("rankUp stays in tier", C.rankUp(50, 149), null);
+  eq("rankUp none when equal", C.rankUp(150, 150), null);
+  eq("rankUp none when falling", C.rankUp(150, 149), null);
+  eq("rankUp double jump reports the top", C.rankUp(49, 150), "三阶");
+  eq("rankUp to the top", C.rankUp(449, 450), "六阶");
+
+  /* mastered reads the existing state and changes nothing */
+  const ms = C.blank();
+  eq("mastered blank", C.masteredCount(ms), 0);
+  ms.w["1-1"] = [1, 0, "2026-11-01"]; ms.w["1-2"] = [1, 2, "2026-11-01"]; ms.w["1-3"] = [0, 1, "2026-11-01"];
+  const msBefore = JSON.stringify(ms);
+  eq("mastered counts right only", C.masteredCount(ms), 2);
+  eq("mastered agrees with status", C.ITEMS.filter((it) => C.model(() => ms, () => "2026-11-01").status(it.id) === 1).length, 2);
+  C.rankOf(C.masteredCount(ms));
+  eq("mastered does not write", JSON.stringify(ms), msBefore);
+  eq("state shape unchanged", Object.keys(C.blank()), ["v", "start", "u", "w", "l", "last"]);
+  eq("storage key unchanged", C.KEY, "ielts-dictation-v1");
+  const full = C.blank(); C.ITEMS.forEach((it) => { full.w[it.id] = [1, 0, ""]; });
+  eq("mastered all", C.masteredCount(full), 500);
+  eq("mastered bad state", C.masteredCount(null), 0);
+
+  /* ---------- 听句概括 ---------- */
+  const Y = window.WLIU_SUMMARY_CORE;
+  const ID = "M7lc1UVf-VE";
+
+  /* link parsing: accepted forms */
+  [
+    "https://www.youtube.com/watch?v=" + ID,
+    "https://youtube.com/watch?v=" + ID,
+    "https://m.youtube.com/watch?v=" + ID,
+    "https://www.youtube.com/watch?v=" + ID + "&t=30s&list=abc",
+    "https://www.youtube.com/watch?feature=share&v=" + ID,
+    "https://www.youtube.com/watch/?v=" + ID,
+    "  https://www.youtube.com/watch?v=" + ID + "  ",
+    "https://WWW.YouTube.com/watch?v=" + ID,
+    "https://youtu.be/" + ID,
+    "https://youtu.be/" + ID + "?si=abc&t=5",
+    "https://www.youtube.com/embed/" + ID,
+    "https://www.youtube.com/embed/" + ID + "?start=5",
+    "https://www.youtube.com/shorts/" + ID,
+    "https://www.youtube-nocookie.com/embed/" + ID,
+    "https://www.youtube.com:443/watch?v=" + ID
+  ].forEach((u) => eq("link ok: " + u, Y.parseYouTube(u), { ok: true, id: ID }));
+
+  /* link parsing: hostile and wrong input, each with the reason it must fail */
+  [
+    ["http://www.youtube.com/watch?v=" + ID, "https"],
+    ["javascript:alert(1)//www.youtube.com/watch?v=" + ID, "https"],
+    ["data:text/html,<script>alert(1)<\/script>", "https"],
+    ["file:///C:/watch?v=" + ID, "https"],
+    ["ftp://www.youtube.com/watch?v=" + ID, "https"],
+    ["//www.youtube.com/watch?v=" + ID, "format"],
+    ["www.youtube.com/watch?v=" + ID, "format"],
+    [ID, "format"],
+    ["https://you\ntube.com/watch?v=" + ID, "format"],
+    ["https://www.youtube.com/wa\ttch?v=" + ID, "format"],
+    ["https:\\\\evil.example\\www.youtube.com/watch?v=" + ID, "format"],
+    ["https://www.youtube.com/watch?v=" + ID + " onload=x", "format"],
+    ["https://x.example/" + "a".repeat(3000), "format"],
+    ["https://www.youtube.com@evil.example/watch?v=" + ID, "host"],
+    ["https://user:pw@www.youtube.com/watch?v=" + ID, "host"],
+    ["https://www.youtube.com:8443/watch?v=" + ID, "host"],
+    ["https://www.youtube.com.evil.example/watch?v=" + ID, "host"],
+    ["https://evil.example/www.youtube.com/watch?v=" + ID, "host"],
+    ["https://evil.example/?u=https://youtu.be/" + ID, "host"],
+    ["https://notyoutube.com/watch?v=" + ID, "host"],
+    ["https://youtube.com./watch?v=" + ID, "host"],
+    ["https://yout\u00fcbe.com/watch?v=" + ID, "host"],
+    ["https://www.y\u043eutube.com/watch?v=" + ID, "host"],
+    ["https://music.youtube.com/watch?v=" + ID, "host"],
+    ["https://youtu.be.evil.example/" + ID, "host"],
+    ["https://ted.example/talks/some_talk", "host"],
+    ["https://www.youtube.com/", "path"],
+    ["https://www.youtube.com/playlist?list=" + ID, "path"],
+    ["https://www.youtube.com/channel/" + ID, "path"],
+    ["https://www.youtube.com/embed/" + ID + "/extra", "path"],
+    ["https://www.youtube.com/watchx?v=" + ID, "path"],
+    ["https://youtu.be/", "path"],
+    ["https://youtu.be/" + ID + "/extra", "path"],
+    ["https://youtu.be//" + ID, "path"],
+    ["https://www.youtube-nocookie.com/watch?v=" + ID, "path"],
+    ["https://www.youtube.com/watch", "id"],
+    ["https://www.youtube.com/watch?v=", "id"],
+    ["https://www.youtube.com/watch?v=short", "id"],
+    ["https://www.youtube.com/watch?v=" + ID + "x", "id"],
+    ["https://www.youtube.com/watch?v=" + ID + "&v=aaaaaaaaaaa", "id"],
+    ["https://www.youtube.com/watch?v=%3Cscript%3Eab", "id"],
+    ["https://www.youtube.com/watch?v=<script>abc", "id"],
+    ["https://www.youtube.com/watch?v=../../../..", "id"],
+    ["https://www.youtube.com/watch?v=M7lc1UVf-V%45", "ok-or-id"],
+    ["https://www.youtube.com/embed/videoseries", "id"],
+    ["https://www.youtube.com/embed/live_stream", "id"],
+    ["https://youtu.be/%2e%2e%2fembed1", "id"]
+  ].forEach((c) => {
+    const r = Y.parseYouTube(c[0]);
+    if (c[1] === "ok-or-id") eq("percent-encoded id still yields only a valid id", r.ok ? Y.validId(r.id) : r.code, r.ok ? true : "id");
+    else eq("link bad " + c[1] + ": " + c[0].slice(0, 70), [r.ok, r.code], [false, c[1]]);
+  });
+  ["", "   ", null, undefined, 5, {}, []].forEach((x) => eq("link empty " + JSON.stringify(x), Y.parseYouTube(x).code, "empty"));
+  [0x2028, 0x2029, 0xa0, 0x7f, 0].forEach((c) => eq("link inner char " + c, Y.parseYouTube("https://www.youtube.com/wat" + String.fromCharCode(c) + "ch?v=" + ID).code, "format"));
+  eq("failed link has a message", typeof Y.parseYouTube("nope").msg, "string");
+  eq("watch url built from id", Y.watchUrl(ID), "https://www.youtube.com/watch?v=" + ID);
+  eq("validId rejects __proto__", Y.validId("__proto__"), false);
+
+  /* time parsing */
+  [["0:00", 0], ["1:05", 65], ["12:34", 754], ["999:59", 59999], ["1:05.5", 65.5], [" 1:05 ", 65], ["１：０５", 65], ["0:07.1", 7.1]].forEach((c) => eq("time " + c[0], Y.parseTime(c[0]), c[1]));
+  ["", "5", "65", "1:5", "1:60", "1:5.5", "1:05.55", "-1:05", "1:05:00", "a:bc", "1000:00", "1:05 x", "1e3:00", "1:-5", ":30", "0x1:00"].forEach((s) => eq("time bad " + s, Y.parseTime(s), null));
+  [null, undefined, 65, {}].forEach((x) => eq("time bad type " + x, Y.parseTime(x), null));
+  [[0, "0:00"], [65, "1:05"], [65.5, "1:05.5"], [599.96, "10:00"], [59.95, "1:00"], [3725, "62:05"]].forEach((c) => eq("fmt " + c[0], Y.fmtTime(c[0]), c[1]));
+  [-1, NaN, Infinity, "5", null].forEach((x) => eq("fmt bad " + x, Y.fmtTime(x), ""));
+  [0, 7.1, 65, 65.5, 754.3].forEach((t) => eq("time round trip " + t, Y.parseTime(Y.fmtTime(t)), t));
+
+  /* segment validation */
+  const segCode = (s, e, d) => { const r = Y.checkSegment(s, e, d); return r.ok ? "ok" : r.code; };
+  eq("seg ok", segCode(10, 20), "ok");
+  eq("seg ok with duration", segCode(10, 20, 100), "ok");
+  eq("seg at min length", segCode(10, 11), "ok");
+  eq("seg to the very end", segCode(90, 100, 100), "ok");
+  eq("seg rounding margin", segCode(90, 100.4, 100), "ok");
+  eq("seg zero duration means unknown", segCode(10, 20, 0), "ok");
+  eq("seg null start", segCode(null, 20), "start");
+  eq("seg null end", segCode(10, null), "end");
+  eq("seg negative", segCode(-1, 20), "start");
+  eq("seg NaN", segCode(NaN, 20), "start");
+  eq("seg infinity", segCode(10, Infinity), "end");
+  eq("seg string", segCode("10", 20), "start");
+  eq("seg equal", segCode(10, 10), "order");
+  eq("seg reversed", segCode(20, 10), "order");
+  eq("seg too short", segCode(10, 10.5), "short");
+  eq("seg past end", segCode(90, 101, 100), "past");
+  eq("seg huge", segCode(0, 1e9), "end");
+  eq("seg one second float case", segCode(Y.parseTime("0:03.1"), Y.parseTime("0:04.1")), "ok");
+  let oneSecFails = 0, shortPass = 0;
+  for (let t = 0; t < 6000; t++) {
+    const s = Y.parseTime(Y.fmtTime(t / 10));
+    if (segCode(s, Y.parseTime(Y.fmtTime((t + 10) / 10))) !== "ok") oneSecFails++;
+    if (segCode(s, Y.parseTime(Y.fmtTime((t + 9) / 10))) !== "short") shortPass++;
+  }
+  eq("every exact one second segment is accepted", oneSecFails, 0);
+  eq("every 0.9 second segment is refused", shortPass, 0);
+  eq("clip keeps a one second float case", Y.saneClip({ videoId: ID, start: Y.parseTime("0:03.1"), end: Y.parseTime("0:04.1") }).end, 4.1);
+
+  /* attempts sanitise */
+  const P1 = Y.PASSAGES[0], attempt = (x) => Object.assign({ date: "2026-11-02", id: P1.id, hits: 1, replays: 0, text: "大意" }, x);
+  eq("attempt keeps fields", Y.saneAttempt(attempt({})), { date: "2026-11-02", id: P1.id, hits: 1, replays: 0, text: "大意" });
+  eq("attempt strips extra", Object.keys(Y.saneAttempt(attempt({ evil: 1, html: "<b>", transcript: "x" }))), ["date", "id", "hits", "replays", "text"]);
+  eq("attempt trims text", Y.saneAttempt(attempt({ text: "  a  " })).text, "a");
+  eq("attempt caps text", Y.saneAttempt(attempt({ text: "x".repeat(5000) })).text.length, Y.LIMITS.text);
+  eq("attempt hits at total", Y.saneAttempt(attempt({ hits: P1.keys.length })).hits, P1.keys.length);
+  [{ hits: P1.keys.length + 1 }, { hits: -1 }, { hits: 1.5 }, { hits: "1" }, { hits: NaN }, { replays: -1 }, { replays: "x" }, { replays: 0.5 }, { date: "2026-13-45" }, { date: "yesterday" }, { date: 5 }, { id: "nope" }, { id: "__proto__" }, { id: "constructor" }, { id: 1 }, { text: "" }, { text: "   " }, { text: 5 }, { text: null }].forEach((x) => {
+    eq("attempt refused " + JSON.stringify(x), Y.saneAttempt(attempt(x)), null);
+  });
+  [null, 5, "x", [], undefined].forEach((x) => eq("attempt refused type " + JSON.stringify(x), Y.saneAttempt(x), null));
+  const xss = "<img src=x onerror=alert(1)>";
+  eq("attempt keeps markup as data only", Y.saneAttempt(attempt({ text: xss })).text, xss);
+  eq("escaped markup is inert", C.esc(xss).indexOf("<"), -1);
+
+  /* clips sanitise: nothing beyond id, title, times and notes survives */
+  const clip = (x) => Object.assign({ videoId: ID, title: "t", start: 10, end: 20, notes: { summary: "s", missed: "m" } }, x);
+  eq("clip kept", Y.saneClip(clip({})), { videoId: ID, title: "t", start: 10, end: 20, notes: { summary: "s", missed: "m" } });
+  eq("clip strips extra", Object.keys(Y.saneClip(clip({ captions: "x", transcript: "y", thumbnail: "z", url: "https://evil.example" }))), ["videoId", "title", "start", "end", "notes"]);
+  eq("clip strips extra notes", Object.keys(Y.saneClip(clip({ notes: { summary: "s", missed: "m", captions: "x" } })).notes), ["summary", "missed"]);
+  eq("clip title optional", Y.saneClip(clip({ title: undefined })).title, "");
+  eq("clip caps title", Y.saneClip(clip({ title: "x".repeat(500) })).title.length, Y.LIMITS.title);
+  eq("clip bad notes become empty", Y.saneClip(clip({ notes: "x" })).notes, { summary: "", missed: "" });
+  [{ videoId: "short" }, { videoId: "videoseries" }, { videoId: "<script>abc" }, { videoId: 5 }, { start: 20, end: 10 }, { start: "1" }, { end: NaN }, { start: 10, end: 10.5 }].forEach((x) => eq("clip refused " + JSON.stringify(x), Y.saneClip(clip(x)), null));
+
+  /* store */
+  eq("store key is separate", Y.KEY !== C.KEY && Y.KEY !== C.PKEY, true);
+  eq("blank store", Y.blankStore(), { v: 1, attempts: [], clips: [] });
+  [null, 5, "x", [], {}, { v: 2, attempts: [attempt({})] }].forEach((x) => eq("store bad root " + JSON.stringify(x), Y.saneStore(x), Y.blankStore()));
+  eq("store non-array parts", Y.saneStore({ v: 1, attempts: "x", clips: {} }), Y.blankStore());
+  eq("store filters bad rows", Y.saneStore({ v: 1, attempts: [attempt({}), { id: "nope" }, null, 5], clips: [clip({}), { videoId: "x" }] }).attempts.length + Y.saneStore({ v: 1, clips: [clip({}), { videoId: "x" }] }).clips.length, 2);
+  const protoStore = Y.saneStore(JSON.parse('{"v":1,"__proto__":{"polluted":1},"attempts":[{"__proto__":{"id":"one-1"},"date":"2026-11-02","hits":1,"replays":0,"text":"a"}]}'));
+  eq("store __proto__ ignored", [({}).polluted, protoStore.polluted, protoStore.attempts.length], [undefined, undefined, 0]);
+  const cap = Y.blankStore();
+  for (let i = 0; i < Y.LIMITS.attempts + 3; i++) Y.addAttempt(cap, attempt({ text: "t" + i }));
+  eq("attempts capped", cap.attempts.length, Y.LIMITS.attempts);
+  eq("oldest attempts dropped", cap.attempts[0].text, "t3");
+  const refused = Y.blankStore();
+  eq("add refuses bad", [Y.addAttempt(refused, { id: "nope" }), Y.addClip(refused, { videoId: "x" }), refused.attempts.length, refused.clips.length], [null, null, 0, 0]);
+  eq("add clip", Y.addClip(refused, clip({})).videoId, ID);
+  eq("export has only that kind", Object.keys(JSON.parse(Y.exportDoc("clips", refused, "T"))), ["app", "kind", "exportedAt", "clips"]);
+  eq("export round trips", Y.saneClip(JSON.parse(Y.exportDoc("clips", refused, "T")).clips[0]).videoId, ID);
+
+  /* reading the stored string */
+  eq("stored nothing is not damage", Y.readStored(null), { store: Y.blankStore(), damaged: false });
+  eq("stored clean is not damage", Y.readStored(JSON.stringify({ v: 1, attempts: [attempt({})], clips: [clip({})] })).damaged, false);
+  eq("stored blank store is not damage", Y.readStored(JSON.stringify(Y.blankStore())).damaged, false);
+  ['{"v":1,"attem', "null", "5", "[]", '{"v":2,"attempts":[],"clips":[]}', '{"v":1,"attempts":"x"}', JSON.stringify({ v: 1, attempts: [attempt({}), { id: "nope" }], clips: [] })].forEach((raw) => eq("stored damage " + raw.slice(0, 30), Y.readStored(raw).damaged, true));
+  eq("stored damage keeps the good rows", Y.readStored(JSON.stringify({ v: 1, attempts: [attempt({}), { id: "nope" }], clips: [] })).store.attempts.length, 1);
+  eq("recovery key is separate", [Y.RECOVERY_KEY !== Y.KEY, Y.RECOVERY_KEY !== C.KEY, Y.RECOVERY_KEY !== C.PKEY], [true, true, true]);
+
+  /* import of this section's own export */
+  const exClips = Y.blankStore(); Y.addClip(exClips, clip({ title: "a" })); Y.addClip(exClips, clip({ title: "b" }));
+  const docClips = Y.parseExport(Y.exportDoc("clips", exClips, "T"));
+  eq("import round trip", [docClips.kind, docClips.rows.length, docClips.bad], ["clips", 2, 0]);
+  ["not json", "null", "[]", "{}", JSON.stringify({ app: "other", kind: "clips", clips: [] }), JSON.stringify({ app: "ielts-dictation", state: {} }), JSON.stringify({ app: "wliu-listen-summary", kind: "__proto__" }), JSON.stringify({ app: "wliu-listen-summary", kind: "clips", clips: "x" }), JSON.stringify({ app: "wliu-listen-summary", kind: "attempts", attempts: [{ id: "nope" }] })].forEach((t) => eq("import refused " + t.slice(0, 40), Y.parseExport(t), null));
+  eq("dictation import still refuses these files", C.parseImport(Y.exportDoc("clips", exClips, "T")), null);
+  const dirtyDoc = Y.parseExport(JSON.stringify({ app: "wliu-listen-summary", kind: "clips", clips: [clip({ title: "<img src=x onerror=alert(1)>", captions: "x", url: "https://evil.example" }), { videoId: "bad" }] }));
+  eq("import cleans rows", [dirtyDoc.bad, Object.keys(dirtyDoc.rows[0])], [1, ["videoId", "title", "start", "end", "notes"]]);
+  const into = Y.blankStore(); Y.addClip(into, clip({ title: "a" }));
+  eq("merge adds only new", Y.mergeExport(into, docClips), { added: 1, dupes: 1, skipped: 0 });
+  eq("merge keeps what was there", into.clips.map((x) => x.title), ["a", "b"]);
+  eq("merge again adds nothing", Y.mergeExport(into, docClips), { added: 0, dupes: 2, skipped: 0 });
+  const fullClips = Y.blankStore();
+  for (let i = 0; i < Y.LIMITS.clips; i++) Y.addClip(fullClips, clip({ title: "c" + i }));
+  eq("merge at the limit removes nothing", [Y.mergeExport(fullClips, docClips), fullClips.clips.length, fullClips.clips[0].title], [{ added: 0, dupes: 0, skipped: 2 }, Y.LIMITS.clips, "c0"]);
+  const dated = Y.blankStore(); Y.addAttempt(dated, attempt({ date: "2026-11-02", hits: 0, text: "new" }));
+  Y.mergeExport(dated, Y.parseExport(JSON.stringify({ app: "wliu-listen-summary", kind: "attempts", attempts: [attempt({ date: "2026-10-01", hits: P1.keys.length, text: "old" })] })));
+  eq("older import does not become the latest", [dated.attempts.map((a) => a.text), Y.latestById(dated.attempts).get(P1.id).text], [["old", "new"], "new"]);
+
+  /* missed and hits */
+  const a2 = (id, hits) => ({ date: "2026-11-02", id, hits, replays: 0, text: "x" });
+  eq("no attempts no missed", Y.missedIds([]), []);
+  eq("missed uses latest", Y.missedIds([a2("one-1", 3), a2("one-1", 1), a2("few-1", 1), a2("few-1", 3)]), ["one-1"]);
+  eq("missed in passage order", Y.missedIds([a2("few-1", 0), a2("one-2", 0)]), ["one-2", "few-1"]);
+  eq("hits sum", Y.countHits([1, 0, 1]), 2);
+  eq("hits zero", Y.countHits([0, 0]), 0);
+  eq("hits unfinished", Y.countHits([1, null]), null);
+  eq("hits empty", Y.countHits([]), null);
+  eq("hits bad", Y.countHits("x"), null);
+
+  /* passage data contract */
+  const D = Y.DATA;
+  eq("passage contract clean", Y.checkPassages(D), []);
+  eq("15 passages", D.passages.length, 15);
+  eq("5 per level", D.levels.map((l) => Y.inLevel(l.id).length), [5, 5, 5]);
+  eq("level labels", D.levels.map((l) => l.label), ["一句", "两三句", "短段"]);
+  eq("sentence counts by level", [Y.inLevel("one").every((p) => p.sentences.length === 1), Y.inLevel("few").every((p) => p.sentences.length >= 2 && p.sentences.length <= 3), Y.inLevel("short").every((p) => p.sentences.length >= 4 && p.sentences.length <= 6)], [true, true, true]);
+  eq("every field present", D.passages.every((p) => ["id", "level", "topic", "sentences", "keys", "zh", "en"].every((f) => f in p)), true);
+  eq("2 to 4 keys", D.passages.every((p) => p.keys.length >= 2 && p.keys.length <= 4), true);
+  eq("all five topics used", Object.keys(D.topics).every((t) => D.passages.some((p) => p.topic === t)), true);
+  eq("ids unique", new Set(D.passages.map((p) => p.id)).size, 15);
+  eq("no figures in passages", D.passages.some((p) => /\d|%/.test(p.sentences.join(" "))), false);
+  eq("no third-party talk brand", D.passages.some((p) => /\bTED\b/i.test(JSON.stringify(p))), false);
+  const broken = (f) => { const d = JSON.parse(JSON.stringify(D)); f(d); return Y.checkPassages(d).length > 0; };
+  eq("contract catches missing passage", broken((d) => d.passages.pop()), true);
+  eq("contract catches duplicate id", broken((d) => { d.passages[1].id = d.passages[0].id; }), true);
+  eq("contract catches too many keys", broken((d) => { d.passages[0].keys.push("甲", "乙"); }), true);
+  eq("contract catches one key", broken((d) => { d.passages[0].keys = ["甲"]; }), true);
+  eq("contract catches missing zh", broken((d) => { delete d.passages[0].zh; }), true);
+  eq("contract catches missing en", broken((d) => { d.passages[0].en = ""; }), true);
+  eq("contract catches wrong sentence count", broken((d) => { d.passages[0].sentences.push("One more."); }), true);
+  eq("contract catches two sentences in one entry", broken((d) => { d.passages[0].sentences = ["Hello there. Bye now."]; }), true);
+  eq("contract catches a figure", broken((d) => { d.passages[0].sentences = ["About 73 people came."]; }), true);
+  eq("contract catches unknown topic", broken((d) => { d.passages[0].topic = "x"; }), true);
+  eq("contract catches bad root", Y.checkPassages(null), ["bad root"]);
+
+  /* the summary logic stays out of the dictation state */
+  const dictBefore = C.blank(); dictBefore.w["1-1"] = [1, 0, "2026-11-02"];
+  const dictSnapshot = JSON.stringify(dictBefore);
+  const sideStore = Y.blankStore(); Y.addAttempt(sideStore, attempt({ hits: P1.keys.length }));
+  eq("attempt does not touch dictation state", JSON.stringify(dictBefore), dictSnapshot);
+  eq("attempt does not move mastered count", C.masteredCount(dictBefore), 1);
+
+  document.getElementById("sum").textContent = (fail ? "FAILED " : "PASSED ") + pass + " passed, " + fail + " failed";
+  document.getElementById("sum").className = fail ? "f" : "p";
+  document.getElementById("out").textContent = lines.join("\n");
+})();
+</script>
+</body>
+</html>

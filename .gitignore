@@ -1,0 +1,32 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+.vscode/
+.idea/
+node_modules/
+
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+credentials*.json
+secrets*.json
+.npmrc
+.netrc
+.git-credentials
+
+# Local tool settings
+.claude/
+CLAUDE.md
+
+# Personal study records exported from the site
+ielts-progress-*.json
+listen-summary-*.json
+
+# Scratch and archives
+*.bak
+*.tmp
+*.zip

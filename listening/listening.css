@@ -1,0 +1,234 @@
+/* Daily listening app. Everything sits under .ls-app so it cannot collide with the site shell.
+   Colour and frame tokens (--pen, --form, --ok, --bad, --warn, --hud-*) come from css/site.css. */
+
+.ls-app { font-family: var(--wl-cjk); font-size: 15px; line-height: 1.75; color: var(--wl-ink); min-width: 0; }
+.ls-app *, .ls-app *::before, .ls-app *::after { box-sizing: border-box; }
+.ls-app [hidden] { display: none !important; }
+.ls-app > .ls-warnbox { margin-bottom: 16px; }
+
+.ls-app h2 { font: 700 15px/1.4 var(--wl-cjk); margin: 0; color: var(--wl-accent-text); }
+/* a small diamond marks each window heading */
+.ls-app h2.ls-mark::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 2px; background: var(--wl-gold); transform: rotate(45deg); }
+.ls-app h2.ls-home-title { font: 700 clamp(19px, 3vw, 24px)/1.3 var(--wl-cjk); color: var(--wl-ink); letter-spacing: .02em; outline: 0; }
+.ls-app h2.ls-s-title { font-size: 16px; color: var(--wl-ink); outline: 0; }
+.ls-app button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ls-app :focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
+
+.ls-view { display: flex; flex-direction: column; gap: 16px; }
+.ls-note { font-size: 14px; color: var(--wl-ink-2); line-height: 1.7; }
+.ls-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ls-center { justify-content: center; }
+.ls-stack { display: flex; flex-direction: column; gap: 12px; }
+.ls-pad { padding: 18px 16px 16px; }
+.ls-duo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 760px) { .ls-duo { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Sub-window: a thinner frame inside the main panel. */
+.ls-card { position: relative; border: 1px solid transparent; border-image: var(--hud-card) 10 fill / 10px / 0 stretch; min-width: 0; }
+
+/* header */
+.ls-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.ls-when { font-size: 14px; color: var(--wl-ink-2); margin-top: 2px; }
+.ls-dayno { display: flex; align-items: baseline; gap: 4px; color: var(--wl-ink-2); font-size: 14px; white-space: nowrap; }
+.ls-dayno b { font: 700 34px/1 var(--wl-mono); color: var(--wl-gold); font-variant-numeric: tabular-nums; margin: 0 3px; }
+
+/* daily quests */
+.ls-card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 16px 16px 8px; }
+.ls-tasks { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.ls-task {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px;
+  border-left: 3px solid var(--q, var(--pen)); background: var(--wl-sheet);
+  background-image: linear-gradient(90deg, var(--pen-soft), transparent 45%);
+}
+.ls-t-body { min-width: 0; }
+.ls-tag { font-size: 13px; font-weight: 700; line-height: 1; padding: 6px 8px; border: 1px solid currentColor; white-space: nowrap; }
+.ls-new { color: var(--pen); }
+.ls-rev { color: var(--form); }
+.ls-cu { color: var(--warn); }
+.ls-task-new { --q: var(--pen); }
+.ls-task-review { --q: var(--form); }
+.ls-task-catch { --q: var(--warn); }
+.ls-t-name { font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.ls-t-meta { font-size: 14px; color: var(--wl-ink-2); margin-top: 2px; }
+.ls-lno { font-family: var(--wl-mono); color: var(--form); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.ls-done { color: var(--ok); font-size: 14px; white-space: nowrap; }
+.ls-msg { padding: 6px 16px 16px; }
+
+/* controls: primary buttons are painted with their corners cut, so the focus ring stays whole */
+.ls-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
+  border: 0; color: var(--pen-ink); padding: 8px 19px; font-size: 15px; line-height: 1.2; white-space: nowrap;
+  background:
+    linear-gradient(135deg, transparent 5px, var(--pen) 5.5px) left / 51% 100% no-repeat,
+    linear-gradient(-45deg, transparent 5px, var(--pen) 5.5px) right / 51% 100% no-repeat;
+}
+.ls-btn:hover:not(:disabled) { filter: brightness(1.12); }
+.ls-app .ls-btn { color: var(--pen-ink); }
+.ls-app .ls-btn.ls-ghost, .ls-app .ls-btn.ls-quiet { background: none; border: 1px solid transparent; padding: 7px 18px; }
+.ls-app .ls-btn.ls-ghost { color: var(--pen); border-image: var(--hud-ghost) 10 fill / 8px / 0 stretch; }
+.ls-app .ls-btn.ls-quiet { color: var(--wl-ink); border-image: var(--hud-card) 10 fill / 8px / 0 stretch; }
+.ls-app .ls-btn.ls-quiet:hover:not(:disabled) { border-image-source: var(--hud-ghost); filter: none; }
+.ls-app .ls-btn.ls-danger { border: 1px solid var(--bad); border-image: none; background: var(--bad-soft); color: var(--bad); }
+.ls-app .ls-btn.ls-sm { min-height: 36px; padding: 5px 12px; font-size: 14px; }
+.ls-app .ls-btn:disabled { opacity: .4; cursor: default; }
+.ls-app .ls-link { border: 0; background: none; color: var(--pen); padding: 0; font-size: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.ls-seg { display: flex; border: 1px solid var(--wl-line-strong); padding: 3px; gap: 3px; background: var(--wl-sheet); }
+.ls-app .ls-seg button { flex: 1 1 0; min-width: 0; min-height: 34px; border: 0; background: transparent; padding: 5px 6px; font-size: 14px; color: var(--wl-ink-2); }
+.ls-app .ls-seg button[aria-pressed="true"] { background: var(--pen); color: var(--pen-ink); }
+.ls-app .ls-seg button:disabled { opacity: .4; cursor: default; }
+.ls-warnbox { font-size: 14px; line-height: 1.7; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn); padding: 10px 12px; }
+.ls-app .ls-warnbox .ls-link { color: inherit; }
+.ls-app label { font-size: 15px; }
+.ls-app input[type="date"] { font: inherit; font-size: 16px; color: var(--wl-ink); background: var(--wl-sheet); border: 1px solid var(--wl-ink-2); padding: 6px 10px; min-height: 40px; max-width: 100%; }
+.ls-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+.ls-export { width: 100%; font: 16px/1.5 var(--wl-mono); color: var(--wl-ink); background: var(--wl-sheet); border: 1px solid var(--wl-line); padding: 8px 10px; resize: vertical; }
+.ls-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--pen); }
+
+/* words to conquer */
+.ls-sec-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ls-big-n { font: 700 26px/1 var(--wl-mono); color: var(--bad); font-variant-numeric: tabular-nums; }
+.ls-big-n.ls-zero { color: var(--ok); }
+.ls-app details summary { cursor: pointer; color: var(--pen); font-size: 14px; }
+.ls-wl { display: flex; flex-direction: column; margin-top: 6px; }
+.ls-wl > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 1px; padding: 9px 0; border-top: 1px solid var(--wl-line); }
+.ls-w { font-family: var(--wl-mono); overflow-wrap: anywhere; }
+.ls-wl .ls-zh { grid-column: 1; color: var(--wl-ink-2); font-size: 14px; }
+.ls-from { grid-column: 2; grid-row: 1; font: 12px var(--wl-mono); color: var(--form); }
+.ls-wl .ls-yours { grid-column: 1 / -1; font-size: 14px; color: var(--wl-ink-2); font-family: inherit; }
+.ls-wl s { color: var(--bad); font-family: var(--wl-mono); overflow-wrap: anywhere; }
+
+/* list index */
+.ls-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 760px) { .ls-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ls-app .ls-tile {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; min-width: 0; padding: 10px 12px;
+  background: none; border: 1px solid transparent; border-image: var(--hud-card) 10 fill / 10px / 0 stretch;
+}
+.ls-app .ls-tile:hover, .ls-tile[aria-pressed="true"] { border-image-source: var(--hud-ghost); }
+.ls-tile .ls-lno { font-size: 12px; margin: 0; }
+.ls-tt { font-size: 14px; line-height: 1.4; color: var(--wl-ink); }
+.ls-st { font: 12px/1.5 var(--wl-mono); color: var(--wl-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ls-bar { height: 3px; background: var(--wl-line); display: flex; margin-top: auto; position: relative; top: 2px; }
+.ls-bar i { display: block; height: 100%; }
+.ls-b-ok { background: var(--ok); }
+.ls-b-bad { background: var(--bad); }
+.ls-pick { grid-column: 1 / -1; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; border-image-source: var(--hud-ghost); }
+
+/* session */
+.ls-s-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.ls-s-title { font-size: 16px; min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.ls-s-right { display: flex; gap: 14px; align-items: center; flex-shrink: 0; }
+.ls-count { font: 15px var(--wl-mono); color: var(--wl-ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ls-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(20px, 1fr)); gap: 4px; }
+.ls-mk { height: 22px; border: 1px solid var(--wl-line); display: grid; place-items: center; font-size: 12px; line-height: 1; color: var(--wl-ink-2); background: var(--wl-sheet); }
+.ls-mk.ls-ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.ls-mk.ls-bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+.ls-mk.ls-cur { border-color: var(--pen); box-shadow: 0 0 0 1px var(--pen) inset; }
+.ls-prompt { padding: 22px 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+
+/* The play control: a glowing core inside a ring of ticks. */
+.ls-app .ls-play {
+  position: relative; width: 84px; height: 84px; border-radius: 50%; border: 1px solid var(--pen);
+  background: var(--pen); color: var(--pen-ink); display: grid; place-items: center;
+  box-shadow: 0 0 14px var(--wl-glow);
+  transition: box-shadow .4s ease-out;
+}
+.ls-play::before {
+  content: ""; position: absolute; inset: -9px; border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(var(--wl-line-strong) 0 3deg, transparent 3deg 30deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+}
+.ls-play:active { transform: scale(.97); }
+.ls-app.is-speaking .ls-play { box-shadow: 0 0 28px var(--wl-glow); }
+.ls-zh-big { font: 400 clamp(26px, 5vw, 34px)/1.35 var(--wl-cjk); letter-spacing: .04em; overflow-wrap: anywhere; }
+
+.ls-answer { display: grid; grid-template-columns: auto minmax(0, 1fr); border: 1px solid var(--pen); overflow: hidden; background: var(--wl-sheet-solid); transition: box-shadow .3s ease-out, border-color .3s ease-out; }
+.ls-app label.ls-no { font: 16px var(--wl-mono); color: var(--pen); background: var(--pen-soft); display: grid; place-items: center; min-width: 46px; padding: 0 10px; border-right: 1px solid var(--pen); font-variant-numeric: tabular-nums; }
+.ls-answer input { border: 0; outline: 0; background: transparent; font: 22px var(--wl-mono); color: var(--wl-ink); padding: 13px 12px; min-width: 0; width: 100%; letter-spacing: .02em; }
+.ls-answer input::placeholder { color: var(--wl-ink-2); opacity: 1; font: 16px var(--wl-cjk); letter-spacing: 0; }
+.ls-answer:focus-within { box-shadow: 0 0 0 2px var(--pen), 0 0 14px var(--wl-glow); }
+.ls-answer.ls-nudge { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.ls-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+/* keepForm scrolls by these margins: clear of the sticky bar above, not flush with the fold below. */
+#ls-s-form { scroll-margin: calc(var(--wl-bar-h) + 12px) 0 12px; }
+.ls-fb { padding: 16px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--wl-line); border-image: none; }
+.ls-fb.ls-ok { background: var(--ok-soft); border-color: var(--ok); }
+.ls-fb.ls-bad { background: var(--bad-soft); border-color: var(--bad); }
+.ls-verdict { font-size: 15px; font-weight: 500; }
+.ls-fb.ls-ok .ls-verdict { color: var(--ok); }
+.ls-fb.ls-bad .ls-verdict { color: var(--bad); }
+.ls-word { font: 28px/1.25 var(--wl-mono); overflow-wrap: anywhere; }
+.ls-fixline { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.ls-lbl { font-size: 13px; color: var(--wl-ink-2); }
+.ls-fix { font: 20px var(--wl-mono); letter-spacing: .06em; overflow-wrap: anywhere; }
+.ls-fix del { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 2px; }
+.ls-fix ins { color: var(--bad); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; font-weight: 700; }
+.ls-yours { font-family: var(--wl-mono); min-width: 0; overflow-wrap: anywhere; }
+.ls-tip { font-size: 14px; color: var(--warn); line-height: 1.7; }
+.ls-meaning { font-size: 15px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.ls-nt { font-size: 14px; color: var(--wl-ink-2); }
+
+/* summary */
+.ls-sum { padding: 22px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.ls-score { font: 700 52px/1 var(--wl-mono); font-variant-numeric: tabular-nums; }
+.ls-score small { font-size: 20px; font-weight: 400; color: var(--wl-ink-2); }
+
+/* Reward window: sits in the page flow above the results, so it can never cover anything or catch a click meant for something else. */
+.ls-reward {
+  position: relative; display: flex; flex-direction: column; gap: 12px; padding: 18px;
+  border: 1px solid transparent; border-image: var(--hud-frame) 18 fill / 18px / 0 stretch;
+}
+.ls-reward-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.ls-app .ls-reward h2 { font-size: 17px; outline: 0; }
+.ls-reward-up {
+  display: flex; align-items: center; gap: 14px; padding: 10px 12px;
+  border: 1px solid var(--wl-gold); background: var(--warn-soft); font-weight: 700; color: var(--wl-gold);
+}
+.ls-reward-up b { flex: none; font: 700 28px/1 var(--wl-cjk); text-shadow: 0 0 12px var(--wl-glow); }
+.ls-reward-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.ls-reward-stats > div { min-width: 0; padding: 8px 10px; background: var(--wl-sheet); border-left: 2px solid var(--wl-line-strong); }
+.ls-reward-stats dt { font-size: 12px; line-height: 1.5; color: var(--wl-ink-2); }
+.ls-reward-stats dd { margin: 0; font: 700 20px/1.3 var(--wl-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ls-reward-stats small { font-size: 13px; font-weight: 400; color: var(--wl-ink-2); }
+.ls-reward-bar { height: 12px; padding: 2px; background: var(--wl-bar-track); border: 1px solid var(--wl-accent); }
+.ls-reward-bar i { display: block; height: 100%; background: var(--wl-exp); transform-origin: left; transform: scaleX(var(--to, 0)); }
+.ls-reward-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.ls-kbd { font-size: 13px; color: var(--wl-ink-2); }
+/* A touch device usually has no Esc key. */
+@media (hover: none) and (pointer: coarse) { .ls-kbd { display: none; } }
+
+@media (max-width: 599px) {
+  .ls-reward { padding: 14px; }
+  .ls-reward-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .ls-task { gap: 10px; padding: 10px; }
+  .ls-app .ls-task .ls-btn { padding-left: 12px; padding-right: 12px; }
+  .ls-app .ls-actions .ls-btn { flex: 1 1 auto; }
+}
+/* While feedback shows on a phone or a short window, the prompt shrinks to a replay strip so the answer box and next button stay on screen. */
+@media (max-width: 599px), (max-height: 950px) {
+  .ls-fb-on .ls-prompt { flex-direction: row; flex-wrap: wrap; justify-content: center; padding: 8px 12px; }
+  .ls-fb-on .ls-prompt .ls-note, .ls-fb-on .ls-prompt .ls-zh-big, .ls-fb-on .ls-prompt [data-act="hint"] { display: none; }
+  .ls-app .ls-fb-on .ls-play { width: 44px; height: 44px; }
+  .ls-fb-on .ls-play svg { width: 22px; height: 22px; }
+  .ls-fb-on .ls-play::before { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ls-fb { animation: ls-settle .3s ease-out; }
+  @keyframes ls-settle { from { transform: translateY(4px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .ls-reward { animation: ls-pop .35s ease-out; }
+  @keyframes ls-pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+  .ls-reward-bar i { animation: ls-fill .8s ease-out .15s backwards; }
+  @keyframes ls-fill { from { transform: scaleX(var(--from, 0)); } to { transform: scaleX(var(--to, 0)); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ls-app * { transition-duration: .01ms !important; }
+  .ls-play:active { transform: none; }
+}
+@media (forced-colors: active) {
+  .ls-card, .ls-reward, .ls-app .ls-tile, .ls-app .ls-btn.ls-ghost, .ls-app .ls-btn.ls-quiet { border: 1px solid CanvasText; border-image: none; }
+  .ls-btn { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+  .ls-app h2.ls-mark::before { background: CanvasText; forced-color-adjust: none; }
+}

@@ -1,0 +1,49 @@
+/* 听句概括. Reuses the .ls-* controls and the colour tokens from css/site.css; only what they lack lives here. */
+
+/* the switch between the two practice sections, inside the main task window */
+.wl-tabs { display: flex; gap: 3px; padding: 3px; margin-bottom: 16px; border: 1px solid var(--wl-line-strong); background: var(--wl-sheet); }
+.wl-tabs button { flex: 1 1 0; min-width: 0; min-height: 40px; border: 0; background: transparent; padding: 6px; font: 700 15px/1.3 var(--wl-cjk); color: var(--wl-ink-2); cursor: pointer; }
+.wl-tabs button[aria-pressed="true"] { background: var(--pen); color: var(--pen-ink); }
+.wl-tabs button:focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
+body.wl-session .wl-tabs { display: none; }
+
+#sm-top:not([hidden]) ~ .ls-view { margin-top: 16px; }
+.sm-clock { font-variant-numeric: tabular-nums; }
+
+.sm-input, .sm-text {
+  display: block; width: 100%; min-width: 0; font: 16px/1.6 var(--wl-cjk); color: var(--wl-ink);
+  background: var(--wl-sheet-solid); border: 1px solid var(--wl-ink-2); padding: 8px 10px;
+}
+.sm-input { min-height: 42px; }
+.sm-text { resize: vertical; }
+.sm-input::placeholder { color: var(--wl-ink-2); opacity: 1; }
+
+.sm-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 760px) { .sm-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.sm-tiles .ls-st { white-space: normal; }
+.sm-st-miss { color: var(--warn); }
+
+.sm-play-state { font-size: 14px; color: var(--wl-ink); min-height: 1.7em; }
+.sm-plays { font: 14px/1.6 var(--wl-mono); color: var(--wl-ink-2); font-variant-numeric: tabular-nums; }
+
+.sm-user { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sm-orig { font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+
+.sm-keys, .sm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sm-key { display: grid; grid-template-columns: minmax(0, 1fr) 11em; gap: 8px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--wl-line); }
+.sm-key-t { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .sm-key { grid-template-columns: minmax(0, 1fr); } }
+.sm-list > li { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--wl-line); }
+.sm-his-top { display: flex; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; font-size: 14px; color: var(--wl-ink-2); }
+.sm-clip-name { color: var(--wl-ink); font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+
+/* The player keeps its own branding and controls: nothing is positioned over it, and YouTube's 200 by 200 minimum always holds. */
+.sm-player-wrap { position: relative; width: 100%; min-width: 200px; aspect-ratio: 16 / 9; min-height: 200px; background: #000; }
+.sm-player-wrap iframe, .sm-player-wrap > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.sm-player-wrap[hidden] { display: none; }
+.sm-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sm-times .ls-stack { gap: 8px; min-width: 0; }
+
+@media (forced-colors: active) {
+  .wl-tabs button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}

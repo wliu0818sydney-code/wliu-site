@@ -1,0 +1,378 @@
+/* 《我独自学习》: site shell. By night a storm over a violet city, in ink strokes; by day an ice-blue snowfield under a frozen waveform; and a generic game-system window language. All geometry is this site's own:
+   frames cut only the top-left and bottom-right corners, with an inner bracket on the other two. */
+
+/* Frames are 64px SVGs sliced with border-image, so focus rings are never clipped and nothing needs a live blur. */
+:root {
+  color-scheme: dark;
+  --wl-sky-0: #06030F; --wl-sky-1: #140836; --wl-sky-2: #36147A;
+  --wl-glass-solid: #160B3A;
+  --wl-sheet: rgba(18,9,50,.7); --wl-sheet-solid: #110731;
+  --wl-ink: #F5F0FF; --wl-ink-2: #C9BCEB;
+  --wl-line: rgba(180,135,255,.3); --wl-line-strong: rgba(190,150,255,.62);
+  --wl-accent: #B07CFF; --wl-accent-text: #CDB0FF;
+  --wl-gold: #FFC46B;
+  --wl-glow: rgba(150,90,255,.5);
+  --wl-shadow: rgba(3,0,14,.75);
+  --wl-title: #FFFFFF; --wl-title-glow: -1px 1px 0 #7B3DFF, 0 0 6px rgba(190,150,255,.9), 0 0 24px rgba(130,70,255,.7);
+  --wl-exp: linear-gradient(90deg, #6B2FE8 0%, #C9A8FF 75%, #FFC46B 100%);
+  --wl-bar-track: #0A0420;
+
+  --city-far: #1C0D4A; --city-near: #120833;
+  --city-w1: rgba(190,150,255,.32); --city-w2: rgba(150,110,230,.14); --city-w3: rgba(255,196,107,.5);
+  --moon-hi: #FFFDFF; --moon-lo: #C9A8FF; --moon-a: rgba(190,140,255,.6); --moon-c: rgba(120,60,240,.22); --moon-b: rgba(120,60,240,0);
+  --ink-pale: rgba(226,210,255,.82); --ink-pale-calm: rgba(226,210,255,.1); --ink-dark: #05020E; --arc: #E8DAFF;
+  --star: #FFFFFF; --beacon: #FFC46B;
+
+  --hud-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' fill='none'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' fill='%23130833' fill-opacity='.9'/%3E%3Cg stroke='%238A4DFF'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.1' stroke-width='10'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.18' stroke-width='6'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.4' stroke-width='3'/%3E%3C/g%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke='%23C9A8FF' stroke-width='1.2'/%3E%3Cpath d='M5 18V16L16 5H18M59 46V48L48 59H46' stroke='%23FBF6FF' stroke-width='2'/%3E%3Cpath d='M48 9H55V16M9 48V55H16' stroke='%23B98CFF' stroke-opacity='.55'/%3E%3C/svg%3E");
+  --hud-card: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='none'%3E%3Cpath d='M9 1H31V23L23 31H1V9Z' fill='%230F0629' fill-opacity='.74' stroke='%23B98CFF' stroke-opacity='.72'/%3E%3C/svg%3E");
+  --hud-ghost: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='none'%3E%3Cpath d='M9 1H31V23L23 31H1V9Z' fill='%23B07CFF' fill-opacity='.1' stroke='%23C9A8FF'/%3E%3C/svg%3E");
+
+  /* tokens the listening app reads */
+  --pen: #BE96FF; --pen-ink: #12072E; --pen-soft: rgba(190,150,255,.16);
+  --form: #A9C1FF; --form-soft: rgba(169,193,255,.14);
+  --ok: #6FDDB0; --ok-soft: rgba(111,221,176,.14);
+  --bad: #FF9FAE; --bad-soft: rgba(255,159,174,.14);
+  --warn: #FFC46B; --warn-soft: rgba(255,196,107,.12);
+
+  --wl-mono: "Cascadia Mono", Consolas, ui-monospace, SFMono-Regular, Menlo, monospace;
+  --wl-cjk: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --wl-bar-h: 48px;
+}
+/* 日间: an ice-blue snowfield. Pale glacial blues and white, teal-navy ink, one warm accent (--wl-gold and the scarf). The storm's city tokens are absent because .wl-city is not shown here. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --wl-sky-0: #AFCFE5; --wl-sky-1: #DCEBF4; --wl-sky-2: #F1F8FB;
+  --wl-glass-solid: #F1F8FB;
+  --wl-sheet: rgba(246,251,253,.8); --wl-sheet-solid: #F9FCFE;
+  --wl-ink: #0A2A3C; --wl-ink-2: #2A4C60;
+  --wl-line: rgba(14,75,105,.34); --wl-line-strong: rgba(10,62,90,.82);
+  --wl-accent: #0E5F80; --wl-accent-text: #0C5470;
+  --wl-gold: #8F4300;
+  --wl-glow: rgba(14,85,112,.26);
+  --wl-shadow: rgba(14,60,90,.22);
+  --wl-title: #08344C; --wl-title-glow: 0 1px 0 rgba(255,255,255,.75);
+  --wl-exp: linear-gradient(90deg, #0E5570 0%, #2A7A9C 78%, #C8661A 100%);
+  --wl-bar-track: #D5E7F1;
+
+  --hud-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' fill='none'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' fill='%23E9F4FA' fill-opacity='.84'/%3E%3Cpath d='M17 7H57V47L47 57H7V17Z' stroke='%23FFFFFF' stroke-opacity='.75'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke='%230E5570' stroke-width='1.2'/%3E%3Cpath d='M5 18V16L16 5H18M59 46V48L48 59H46' stroke='%230A2A3C' stroke-width='2'/%3E%3Cpath d='M48 9H55V16M9 48V55H16' stroke='%230E5570' stroke-opacity='.6'/%3E%3C/svg%3E");
+  --hud-card: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='none'%3E%3Cpath d='M9 .5H31.5V23L23 31.5H.5V9Z' fill='%23F6FBFD' fill-opacity='.72' stroke='%230E5570'/%3E%3C/svg%3E");
+  --hud-ghost: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='none'%3E%3Cpath d='M9 .5H31.5V23L23 31.5H.5V9Z' fill='%230E5570' fill-opacity='.09' stroke='%230C5470'/%3E%3C/svg%3E");
+
+  --pen: #0E5570; --pen-ink: #FFFFFF; --pen-soft: rgba(14,85,112,.12);
+  --form: #1F4B86; --form-soft: rgba(31,75,134,.1);
+  --ok: #0C5F42; --ok-soft: rgba(12,95,66,.1);
+  --bad: #A02432; --bad-soft: rgba(160,36,50,.08);
+  --warn: #8A4000; --warn-soft: rgba(200,102,26,.13);
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; background: var(--wl-sky-0); }
+/* The page must not scroll behind the entry screen. */
+html.wl-entry-open, html.wl-entry-open body { overflow: hidden; }
+html.wl-entry-open .wl-room { visibility: hidden; }
+body {
+  margin: 0; min-height: 100vh; min-height: 100dvh;
+  font: 400 15px/1.75 var(--wl-cjk); color: var(--wl-ink);
+  /* no body background: it would paint over the negative z-index sky and city */
+}
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -2;
+  background: linear-gradient(180deg, var(--wl-sky-0) 0%, var(--wl-sky-1) 60%, var(--wl-sky-2) 100%);
+}
+a { color: var(--wl-accent-text); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--wl-accent-text); outline-offset: 2px; }
+
+.wl-label {
+  font: 400 12px/1.4 var(--wl-cjk); letter-spacing: .08em;
+  color: var(--wl-ink-2); white-space: nowrap;
+}
+
+/* ---------- backdrop: a painted storm, static apart from one rare, soft swell of moonlight (see the end of this file) ---------- */
+.wl-city { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.wl-far { fill: var(--city-far); }
+.wl-near { fill: var(--city-near); }
+.wl-w1 { fill: var(--city-w1); } .wl-w2 { fill: var(--city-w2); } .wl-w3 { fill: var(--city-w3); }
+.wl-moon-a { stop-color: var(--moon-a); } .wl-moon-c { stop-color: var(--moon-c); } .wl-moon-b { stop-color: var(--moon-b); }
+.wl-moon-hi { stop-color: var(--moon-hi); } .wl-moon-lo { stop-color: var(--moon-lo); }
+.wl-pale-a { stop-color: var(--ink-pale); } .wl-pale-b { stop-color: var(--ink-pale-calm); }
+.wl-ink-dark { fill: var(--ink-dark); }
+.wl-arc { stroke: var(--arc); }
+.wl-swell { opacity: 0; }
+.wl-stars { fill: var(--star); }
+.wl-beacon { fill: var(--beacon); }
+
+/* ---------- 日间 backdrop: one saved picture on the fixed sky layer, not live DOM, so scrolling and theme switches cost one image. The night theme never requests it. ---------- */
+:root[data-theme="light"] .wl-city { display: none; }
+:root[data-theme="light"] body::before {
+  background: url("../assets/snowfield.svg") 50% 100% / cover no-repeat, linear-gradient(180deg, var(--wl-sky-0) 0%, var(--wl-sky-1) 45%, var(--wl-sky-2) 100%);
+}
+/* The picture is 2.4:1 with the whole ridgeline in its top quarter, so height sets the scale and narrower windows crop the sides, never a bar's cap. Wider than the picture, it stretches sideways instead of losing the ridge. */
+@media (min-aspect-ratio: 12/5) {
+  :root[data-theme="light"] body::before { background-size: 100% 100%, auto; }
+}
+/* A few flakes in the gutters only, moved by transform and opacity. Switched on near the end of this file. */
+.wl-drift { display: none; position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.wl-drift i { position: absolute; top: 0; left: var(--x); width: var(--s, 4px); height: var(--s, 4px); border-radius: 50%; background: #FFFFFF; opacity: 0; }
+.wl-drift i:nth-child(1) { --x: 6vw; --s: 3px; --t: 17s; --d: -2s; }
+.wl-drift i:nth-child(2) { --x: 11vw; --s: 5px; --t: 13s; --d: -9s; }
+.wl-drift i:nth-child(3) { --x: 15vw; --s: 3px; --t: 21s; --d: -14s; }
+.wl-drift i:nth-child(4) { --x: 19vw; --s: 4px; --t: 15s; --d: -5s; }
+.wl-drift i:nth-child(5) { --x: 8vw; --s: 4px; --t: 19s; --d: -11s; }
+.wl-drift i:nth-child(6) { --x: 87vw; --s: 3px; --t: 18s; --d: -7s; }
+.wl-drift i:nth-child(7) { --x: 91vw; --s: 5px; --t: 14s; --d: -1s; }
+.wl-drift i:nth-child(8) { --x: 95vw; --s: 3px; --t: 22s; --d: -16s; }
+.wl-drift i:nth-child(9) { --x: 99vw; --s: 4px; --t: 16s; --d: -12s; }
+.wl-drift i:nth-child(10) { --x: 103vw; --s: 4px; --t: 20s; --d: -4s; }
+
+/* ---------- the window frame ---------- */
+.hud {
+  position: relative; border: 1px solid transparent;
+  border-image: var(--hud-frame) 18 fill / 18px / 0 stretch;
+}
+.wl-title {
+  margin: 0; font: 700 clamp(25px, 7.3vw, 56px)/1.2 var(--wl-cjk); color: var(--wl-title);
+  text-shadow: var(--wl-title-glow); white-space: nowrap; letter-spacing: 0;
+}
+.wl-sub {
+  display: flex; align-items: center; justify-content: center; gap: 12px; margin: 2px 0 0;
+  font: 700 clamp(14px, 3.6vw, 20px)/1.4 var(--wl-cjk); color: var(--wl-gold); letter-spacing: .04em;
+}
+.wl-wave { flex: none; fill: none; stroke: var(--wl-accent); stroke-width: 2.5; stroke-linecap: round; }
+
+/* ---------- entry ---------- */
+.wl-entry {
+  position: fixed; inset: 0; z-index: 10; display: grid; grid-template-rows: 1fr auto; justify-items: center; gap: 16px; overflow: hidden;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  transition: opacity .45s ease-out;
+}
+.wl-entered .wl-entry { display: none; }
+.wl-entry.is-leaving { opacity: 0; pointer-events: none; }
+.wl-entry-window {
+  align-self: end; width: min(640px, 100%); padding: 28px 22px 22px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.wl-start {
+  min-height: 52px; min-width: 180px; margin-top: 8px; padding: 10px 28px; border: 0; cursor: pointer;
+  font: 700 17px/1.2 var(--wl-cjk); color: var(--pen-ink);
+  background:
+    linear-gradient(135deg, transparent 7px, var(--pen) 7.5px) left / 51% 100% no-repeat,
+    linear-gradient(-45deg, transparent 7px, var(--pen) 7.5px) right / 51% 100% no-repeat;
+  filter: drop-shadow(0 0 10px var(--wl-glow));
+}
+.wl-start:hover { filter: drop-shadow(0 0 14px var(--wl-glow)) brightness(1.12); }
+.wl-entry-load { display: none; width: min(420px, 100%); height: 12px; margin-top: 8px; padding: 2px; background: var(--wl-bar-track); border: 1px solid var(--wl-accent); }
+.wl-entry-load i { display: block; height: 100%; background: var(--wl-exp); transform-origin: left; transform: scaleX(0); }
+.wl-entry-status { margin: 0; min-height: 1.75em; color: var(--wl-ink); font-size: 15px; }
+.wl-entry-skip { margin: 0; font-size: 13px; color: var(--wl-ink-2); }
+.wl-entry-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--wl-ink-2); }
+.wl-entry[data-stage="standby"] .wl-entry-skip { display: none; }
+.wl-entry[data-stage="loading"] .wl-start { display: none; }
+.wl-entry[data-stage="loading"] .wl-entry-load { display: block; }
+.wl-entry[data-stage="loading"] .wl-entry-load i { transform: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .wl-entry[data-stage="loading"] .wl-entry-load i { animation: wl-load 1.5s ease-out; }
+  @keyframes wl-load { from { transform: scaleX(0); } to { transform: none; } }
+}
+/* The figure stands below the window in its own grid row, so the two can never overlap. Its rooftop runs off the left of the screen. */
+.wl-entry-art {
+  justify-self: stretch; display: flex; justify-content: center; align-items: flex-end; height: clamp(170px, 36vh, 340px); min-height: 0; pointer-events: none;
+  margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
+}
+.wl-entry-art .wl-learner { flex: 1 1 100%; min-width: 0; }
+.wl-entry-art .wl-art-slot:not(:empty) { flex: 1 1 50%; }
+/* Enough height: the figure takes more of the screen. */
+@media (min-height: 700px) {
+  .wl-entry-art { height: clamp(170px, 42vh, 440px); }
+}
+/* A landscape phone: the figure gives way so the button and status stay on screen. */
+@media (max-height: 520px) {
+  .wl-entry { overflow-y: auto; grid-template-rows: 1fr; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .wl-entry-window { align-self: center; padding: 16px; gap: 6px; }
+  .wl-entry-art { display: none; }
+  .wl-start { min-height: 44px; margin-top: 2px; }
+}
+
+/* ---------- room ---------- */
+.wl-room { position: relative; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.wl-skip {
+  position: absolute; left: 8px; top: 8px; z-index: 6; padding: 8px 12px; font-size: 14px;
+  background: var(--wl-glass-solid); border: 1px solid var(--wl-accent-text); transform: translateY(-200%);
+}
+.wl-skip:focus { transform: none; }
+.wl-bar {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px;
+  height: var(--wl-bar-h); padding: 0 24px; border-bottom: 1px solid var(--wl-line-strong);
+  background: var(--wl-glass-solid);
+}
+.wl-logo { color: var(--wl-ink); text-decoration: none; font-weight: 700; font-size: 15px; white-space: nowrap; }
+.wl-bar-link { font-size: 14px; }
+.wl-bar-gap { flex: 1 1 auto; }
+.wl-bar-clock { font-variant-numeric: tabular-nums; font-family: var(--wl-mono); }
+.wl-theme { display: flex; border: 1px solid var(--wl-line-strong); }
+.wl-theme button {
+  border: 0; background: transparent; color: var(--wl-ink-2); font: 400 13px/1 var(--wl-cjk);
+  padding: 7px 10px; min-height: 30px; cursor: pointer; transition: color .3s ease-out, background-color .3s ease-out;
+}
+.wl-theme button[aria-pressed="true"] { background: var(--pen); color: var(--pen-ink); }
+
+/* The figure stands in a gutter; the centre column is the only place with text or controls, so they can never overlap. */
+.wl-layout {
+  flex: 1 0 auto; width: 100%; padding: 20px 24px 28px;
+  display: grid; grid-template-columns: minmax(190px, 1fr) minmax(0, 860px) minmax(190px, 1fr); gap: 16px; align-items: start;
+}
+.wl-center { grid-column: 2; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Stays put in the viewport while the page scrolls, and comes to rest on the footer. The rooftop reaches the edge of the screen. */
+.wl-figure {
+  position: sticky; top: var(--wl-bar-h); height: calc(100vh - var(--wl-bar-h)); height: calc(100dvh - var(--wl-bar-h));
+  margin: -20px 0 -28px; display: flex; align-items: flex-end; pointer-events: none; overflow: hidden;
+}
+.wl-figure-left { grid-column: 1; grid-row: 1; margin-left: -24px; }
+.wl-figure-right { grid-column: 3; grid-row: 1; margin-right: -24px; }
+/* The file draws its roof past its own picture, so the box sets how far the roof runs while the figure keeps its proportions. */
+.wl-learner { display: block; width: 100%; height: 100%; max-height: 620px; }
+.wl-art-slot { min-width: 0; width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.wl-art-slot:empty { display: none; }
+.wl-art { display: block; width: 100%; height: 100%; max-height: 620px; object-fit: contain; object-position: bottom; }
+.wl-has-art .wl-learner { display: none; }
+/* One figure at a time: the storm learner by night, the small snow learner by day. Only display changes, so nothing reloads and the art slots above still win. */
+:root:not([data-theme="light"]) .wl-learner-snow { display: none; }
+:root[data-theme="light"] .wl-learner:not(.wl-learner-snow) { display: none; }
+/* By day the figure stays very small against the range: the same share of the screen as on the entry screen, with the cliff still running to the edge. */
+:root[data-theme="light"] .wl-figure .wl-learner-snow { max-height: 42vh; }
+/* The export box has no other edge, so it needs a boundary a control can be seen by. */
+.wl-main .ls-export { border-color: var(--wl-line-strong); }
+
+/* Holding still in a session: nothing moves near a word being answered. */
+body.wl-session .wl-learner { content: url("../assets/learner.svg#still"); }
+body.wl-session .wl-learner.wl-learner-snow { content: url("../assets/learner-snow.svg#still"); }
+
+/* 日间: watching your own video holds still too, though that flow is not a session. */
+:root[data-theme="light"] body:has(#wl-summary:not([hidden]) #sm-m2:not([hidden])) .wl-learner.wl-learner-snow { content: url("../assets/learner-snow.svg#still"); }
+
+/* hero: title, EXP and status rows */
+.wl-hero { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 12px 8px; padding: 20px 24px 18px; }
+.wl-hero-head { text-align: center; min-width: 0; }
+.wl-exp { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+.wl-rank {
+  width: 54px; height: 54px; display: grid; place-items: center;
+  font: 700 22px/1 var(--wl-cjk); color: var(--wl-gold); text-shadow: 0 0 10px var(--wl-glow);
+  border: 1px solid transparent; border-image: var(--hud-ghost) 12 fill / 12px / 0 stretch;
+}
+.wl-exp-body { min-width: 0; }
+.wl-exp-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; font-size: 14px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.wl-exp-k { font: 700 14px/1 var(--wl-mono); color: var(--wl-accent-text); }
+.wl-exp-unit, .wl-exp-next { color: var(--wl-ink-2); }
+.wl-exp-bar { height: 14px; margin-top: 3px; padding: 2px; background: var(--wl-bar-track); border: 1px solid var(--wl-accent); position: relative; }
+.wl-exp-bar i { display: block; height: 100%; background: var(--wl-exp); transform-origin: left; transform: scaleX(var(--exp, 0)); transition: transform .5s ease-out; }
+/* rank boundaries on the bar: each 10% of the track is 50 words */
+.wl-exp-bar::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--wl-bar-track) calc(10% - 1px) 10%);
+}
+.wl-exp-marks { position: relative; height: 16px; margin-top: 2px; font: 700 11px/16px var(--wl-cjk); color: var(--wl-ink-2); }
+.wl-exp-marks span { position: absolute; top: 0; }
+.wl-exp-marks span.is-on { color: var(--wl-gold); }
+.wl-read { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 18px; border-top: 1px solid var(--wl-line); padding-top: 4px; }
+.wl-read > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 3px 0; min-width: 0; }
+.wl-read dt { font-size: 12px; line-height: 1.5; color: var(--wl-ink-2); white-space: nowrap; }
+.wl-read dd { margin: 0; font-size: 13px; line-height: 1.5; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* main panel */
+.wl-main { padding: 20px 22px 22px; min-width: 0; scroll-margin-top: calc(var(--wl-bar-h) + 12px); outline: 0; }
+.wl-meter { display: none; align-items: center; gap: 12px; height: 38px; margin-bottom: 12px; }
+body.wl-session .wl-meter { display: flex; }
+.wl-meter canvas { flex: 1 1 auto; min-width: 0; width: 100%; height: 38px; display: block; }
+.wl-meter .wl-label { flex: none; width: 3.6em; text-align: right; }
+.wl-noscript { color: var(--warn); }
+
+/* about window */
+.wl-about { padding: 18px 22px; scroll-margin-top: calc(var(--wl-bar-h) + 12px); }
+.wl-about h2 { font: 700 17px/1.4 var(--wl-cjk); margin: 0 0 8px; outline: 0; color: var(--wl-accent-text); }
+.wl-about p { margin: 0 0 10px; font-size: 14px; }
+.wl-handle { font: 13px var(--wl-mono); overflow-wrap: anywhere; }
+.wl-quiet { color: var(--wl-ink-2); margin-bottom: 0 !important; padding-top: 10px; border-top: 1px solid var(--wl-line); }
+
+/* footer: solid, because it sits over the brightest part of the city */
+.wl-foot { padding: 14px 24px 22px; border-top: 1px solid var(--wl-line); background: var(--wl-glass-solid); font-size: 13px; color: var(--wl-ink-2); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 20px; }
+.wl-foot p { margin: 0; }
+
+/* ---------- panels rise one after another ---------- */
+.is-entering .wl-rise-1, .is-entering .wl-rise-2, .is-entering .wl-rise-3, .is-entering .wl-rise-4 { animation: wl-rise .6s ease-out backwards; }
+.is-entering .wl-rise-2 { animation-delay: .12s; }
+.is-entering .wl-rise-3 { animation-delay: .24s; }
+.is-entering .wl-rise-4 { animation-delay: .36s; }
+@keyframes wl-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; } }
+
+/* A session keeps only what serves the word: the title and the bar, no status rows. */
+body.wl-session .wl-read, body.wl-session .wl-exp-marks, body.wl-session .wl-hero .wl-sub { display: none; }
+body.wl-session .wl-hero { padding-top: 12px; padding-bottom: 12px; }
+body.wl-session .wl-hero .wl-title { font-size: 24px; }
+
+/* ---------- no room in the gutters: the figure steps aside, and so stays out of any session on a small screen ---------- */
+@media (max-width: 1279px) {
+  .wl-layout { display: block; max-width: 900px; margin: 0 auto; padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
+  .wl-figure { display: none; }
+}
+/* ---------- single column: the shell steps aside for the phone keyboard in a session ---------- */
+@media (max-width: 1099px) {
+  /* Here the moon and the bright strokes sit behind the windows, so the windows close up nearly solid. */
+  :root {
+  --hud-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' fill='none'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' fill='%23130833' fill-opacity='.97'/%3E%3Cg stroke='%238A4DFF'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.1' stroke-width='10'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.18' stroke-width='6'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke-opacity='.4' stroke-width='3'/%3E%3C/g%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke='%23C9A8FF' stroke-width='1.2'/%3E%3Cpath d='M5 18V16L16 5H18M59 46V48L48 59H46' stroke='%23FBF6FF' stroke-width='2'/%3E%3Cpath d='M48 9H55V16M9 48V55H16' stroke='%23B98CFF' stroke-opacity='.55'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="light"] {
+  --hud-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' fill='none'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' fill='%23E9F4FA' fill-opacity='.92'/%3E%3Cpath d='M17 7H57V47L47 57H7V17Z' stroke='%23FFFFFF' stroke-opacity='.75'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke='%230E5570' stroke-width='1.2'/%3E%3Cpath d='M5 18V16L16 5H18M59 46V48L48 59H46' stroke='%230A2A3C' stroke-width='2'/%3E%3Cpath d='M48 9H55V16M9 48V55H16' stroke='%230E5570' stroke-opacity='.6'/%3E%3C/svg%3E");
+  }
+  .wl-bar { position: static; height: calc(var(--wl-bar-h) + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); gap: 12px; }
+  .wl-foot { padding: 14px max(16px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  /* 退出 stays in the session header */
+  body.wl-session .wl-bar, body.wl-session .wl-hero, body.wl-session .wl-about, body.wl-session .wl-foot { display: none; }
+  body.wl-session .wl-layout { padding-top: max(8px, env(safe-area-inset-top)); }
+  body.wl-session .wl-meter { height: 24px; margin: 0 0 6px; }
+  body.wl-session .wl-meter canvas { height: 24px; }
+}
+@media (max-width: 599px) {
+  /* A phone sees a slice of the picture: frame a burst, a silence and the next attack, and give the ridge the top of the entry screen. */
+  :root[data-theme="light"] body::before { background-position: 47.5% 100%, 0 0; }
+  :root[data-theme="light"] .wl-entry-art { height: clamp(170px, 33vh, 300px); }
+  .wl-hero { padding: 14px 14px 12px; gap: 8px 6px; }
+  .wl-main { padding: 14px 12px 16px; }
+  .wl-about { padding: 14px; }
+  .wl-wave { display: none; }
+  .wl-rank { width: 46px; height: 46px; font-size: 18px; }
+  .wl-exp { gap: 10px; }
+  .wl-read { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+}
+@media (max-width: 439px) {
+  .wl-bar-clock { display: none; }
+}
+@media (max-width: 339px) {
+  .wl-exp-marks { font-size: 10px; }
+}
+
+/* A little life on a large screen only, and never while a word is being answered: the moon brightens softly twice in about two seconds, then rests for 35 seconds. Only opacity changes. */
+@media (prefers-reduced-motion: no-preference) and (min-width: 1100px) {
+  body:not(.wl-session) .wl-swell { animation: wl-swell 37s linear infinite; }
+  @keyframes wl-swell { 0%, 94%, 100% { opacity: 0; } 95% { opacity: .5; } 96% { opacity: .2; } 97% { opacity: .42; } 99% { opacity: 0; } }
+  /* 日间: the same rule for the snow. Ten flakes, gutters only, gone in a session, and not rendered at all by night. */
+  :root[data-theme="light"] body:not(.wl-session) .wl-drift { display: block; }
+  :root[data-theme="light"] body:has(#wl-summary:not([hidden]) #sm-m2:not([hidden])) .wl-drift { display: none; }
+  .wl-drift i { animation: wl-drift var(--t) linear var(--d) infinite; }
+  @keyframes wl-drift { 0% { opacity: 0; transform: translate3d(0, -4vh, 0); } 10% { opacity: .9; } 88% { opacity: .9; } 100% { opacity: 0; transform: translate3d(-9vw, 104vh, 0); } }
+}
+
+/* ---------- reduced motion: nothing moves, crossfades only ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .wl-learner { content: url("../assets/learner.svg#still"); }
+  .wl-learner.wl-learner-snow { content: url("../assets/learner-snow.svg#still"); }
+  .wl-exp-bar i { transition: none; }
+  .is-entering .wl-rise-1, .is-entering .wl-rise-2, .is-entering .wl-rise-3, .is-entering .wl-rise-4 { animation: wl-fade .4s ease-out backwards; animation-delay: 0s; }
+  @keyframes wl-fade { from { opacity: 0; } to { opacity: 1; } }
+}
+
+/* ---------- forced colours: frames and painted buttons fall back to plain borders ---------- */
+@media (forced-colors: active) {
+  :root[data-theme="light"] body::before { background: Canvas; }
+  .hud, .wl-rank { border: 1px solid CanvasText; border-image: none; }
+  .wl-start { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+  .wl-exp-bar i, .wl-entry-load i { background: Highlight; forced-color-adjust: none; }
+}
