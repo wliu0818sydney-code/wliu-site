@@ -16,6 +16,31 @@
 
 非官方个人学习工具。与 IELTS（雅思）的主办方 British Council、IDP 和 Cambridge University Press & Assessment 没有隶属关系，也未获其认可，相关商标归其所有。站名化用了作品《我独自升级》的标题，与该作品及其权利方没有关联，也未获授权。
 
+## 登录
+
+打开网站先看到标题页，它是全站唯一中英双语的页面，其余界面都是中文。输入用户名登录，或者选择访客登录。
+
+- 不需要密码，也没有账号：用户名只用来在这个浏览器里分开保存进度，不能跨设备同步。这台设备上输入同一个名字的人都能看到这份进度。
+- 名字不区分大小写，最多 20 个字符。每个用户名有自己的听写进度、听写设置和听句概括记录；主题是整个浏览器共用的。
+- 访客用的是有用户名之前的那份记录，所以以前的进度都在访客里，用户名登录不会动它。
+- 同一个标签页里只登录一次，刷新后还是这个用户；新开标签页要重新登录，上次的名字会自动填好。顶栏可以切换用户，练习进行中不显示切换按钮。
+
+## 载入动画
+
+登录后播放一段约 3 秒的视频（`assets/loader-intro.mp4`，竖屏设备用 `assets/loader-intro-portrait.mp4`），结尾淡成纯白，再显示黑字 hello world，然后进入网站。
+
+- 点击或按键（Tab 和 Shift 除外）可以跳过。
+- 系统开启“减弱动态效果”或浏览器开启省流量时不播放视频，只显示白屏和文字。视频约 1.5 秒内没开始播放、播放中卡住超过约 0.7 秒，或者网太慢、5.5 秒还没放完时，也会直接转到白屏。
+- 打开登录页时就会开始预载视频，约 3.6 到 4.9 MB，这样点登录后能马上播放。
+- 视频里最强的闪烁每秒不超过 3 次。
+
+视频由下面四段素材剪辑而成（裁切、变速、推近、调色和转场），都来自 Pixabay，遵循 [Pixabay 内容许可](https://pixabay.com/service/license-summary/)。其中前三段在 Pixabay 上标注为 AI 生成：
+
+- [Energy Source Pulse Loop](https://pixabay.com/videos/energy-light-loop-blue-glow-beam-279080/)，作者 doktorkleinmusic
+- [The Moment of Rock Collapse](https://pixabay.com/videos/rock-explosion-collapse-impact-273086/)，作者 iwsky
+- [A Wave of Shock Spreading at Light Speed](https://pixabay.com/videos/shockwave-light-explosion-energy-271801/)，作者 iwsky
+- [Pyramids, Lights, Energy](https://pixabay.com/videos/pyramids-lights-energy-gold-temple-338689/)，作者 MAURICIO_BR
+
 ## 听句概括
 
 任务窗口顶部可以切换到“听句概括”：听一句或几句英语，用自己的话写下意思。它的数据单独保存，不影响听写的排期、判分、EXP 和等级。可以用 `index.html#summary` 直接打开。
@@ -43,7 +68,7 @@
 
 ## 隐私与第三方服务
 
-- 本站没有服务器、统计或广告。练习记录只保存在访问者自己的浏览器里。自己写的概括、笔记和标题不会被朗读，也不会发送到任何地方；粘贴的链接里的视频 ID 在点击加载后会发给 YouTube。
+- 本站没有服务器、统计或广告。用户名和练习记录只保存在访问者自己的浏览器里。自己写的概括、笔记和标题不会被朗读，也不会发送到任何地方；粘贴的链接里的视频 ID 在点击加载后会发给 YouTube。
 - 网站托管在 GitHub Pages，GitHub 可能记录访问日志。
 - 部分浏览器的语音由其厂商在线合成，发送的只是本站的单词和短文。
 - “自带视频”使用 YouTube API 服务。点击加载后浏览器才会连接 YouTube，这时 YouTube 可能写入 Cookie。点击加载即表示同意 [YouTube 服务条款](https://www.youtube.com/t/terms)，数据处理适用 [Google 隐私权政策](https://policies.google.com/privacy)。
@@ -74,6 +99,7 @@ python -m http.server 8000
 - 进度只保存在访问者自己的浏览器里（`localStorage`），不会上传到任何地方。在 `github.io` 上，同一账号的其他项目站点和本站共用这份浏览器存储，所以以后在这个账号下再开站点时，不要清空 `localStorage`。
 - 换设备、换浏览器、清除浏览器数据或更换网站域名后，进度都不会保留。可以在页面的“设置”里用“导出进度”备份，再用“导入进度”恢复。
 - 导入是整体覆盖，不会合并。
+- 每个用户名的记录分开保存：听写、听写设置、概括记录和它的另存副本都用“原来的键 + `@` + 小写并经 URL 编码的用户名”，例如 `ielts-dictation-v1@alice`；访客用原来的键。
 - 同时开两个标签页练习听写时，后保存的进度会覆盖先保存的。
 - 听句概括的记录单独保存在 `wliu-listen-summary-v1` 下，不包含在听写的“导出进度”里，在它自己的页面里导出和导入。导入只添加还没有的内容，不会覆盖或删除已有记录。如果存储的内容读不出来，原始文本会先另存到 `wliu-listen-summary-v1-recovery`，页面会提示并可以导出它。
 - 单词发音使用浏览器自带的语音合成。如果约 8 秒内没有开始发音，页面会提示，这时可以换一种口音或改用“看中文写英文”。微信等应用内浏览器也可能读不出声音。
@@ -86,7 +112,11 @@ assets/learner.svg      夜间：屋顶上的学习者（装饰，SVG）
 assets/learner-snow.svg 日间：雪崖上远远的同一个学习者（装饰，SVG）
 assets/snowfield.svg    日间背景：声波冰川和层层山脊（SVG，只在日间加载）
 css/site.css            网站外壳样式、颜色变量和窗口边框
-js/site.js              入场画面、听写波形、主题切换、进度面板
+assets/loader-intro.mp4 登录后的载入视频（竖屏版 loader-intro-portrait.mp4），素材来源见“载入动画”
+js/site.js              登录、听写波形、主题切换、进度面板
+js/profile.js           用户名校验和按用户名区分的存储键（不依赖页面）
+js/loader.js            登录后的载入视频和 hello world
+css/loader.css          载入画面样式
 listening/data.js       词表（由脚本从这个听写工具的第一版导出，不要手改，也不要调整顺序）
 listening/core.js       排期、判分、日期、数据校验、等级计算（不依赖页面）
 listening/listening.js  听写的界面、流程和本轮结算

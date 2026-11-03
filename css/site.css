@@ -141,7 +141,8 @@ a { color: var(--wl-accent-text); text-underline-offset: 3px; }
 
 /* ---------- entry ---------- */
 .wl-entry {
-  position: fixed; inset: 0; z-index: 10; display: grid; grid-template-rows: 1fr auto; justify-items: center; gap: 16px; overflow: hidden;
+  --wl-art-h: clamp(170px, 36vh, 340px);
+  position: fixed; inset: 0; z-index: 10; display: grid; grid-template-rows: minmax(min-content, 1fr) minmax(90px, var(--wl-art-h)); justify-items: center; gap: 16px; overflow: hidden auto;
   padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
   transition: opacity .45s ease-out;
 }
@@ -165,28 +166,48 @@ a { color: var(--wl-accent-text); text-underline-offset: 3px; }
 .wl-entry-status { margin: 0; min-height: 1.75em; color: var(--wl-ink); font-size: 15px; }
 .wl-entry-skip { margin: 0; font-size: 13px; color: var(--wl-ink-2); }
 .wl-entry-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--wl-ink-2); }
-.wl-entry[data-stage="standby"] .wl-entry-skip { display: none; }
-.wl-entry[data-stage="loading"] .wl-start { display: none; }
+/* The login form. There is no password field on purpose: see the note under the form. */
+.wl-login { width: min(420px, 100%); display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.wl-login label { font-size: 14px; line-height: 1.5; color: var(--wl-ink-2); }
+.wl-login-input { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 8px 12px; font: 16px/1.5 var(--wl-cjk); color: var(--wl-ink); background: var(--wl-sheet-solid); border: 1px solid var(--wl-ink-2); border-radius: 0; }
+.wl-login-error { margin: 0; font-size: 14px; line-height: 1.6; color: var(--bad); }
+.wl-login-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.wl-login-actions .wl-start { flex: 1 1 130px; min-width: 0; min-height: 46px; margin-top: 0; padding: 10px 16px; font-size: 16px; }
+.wl-guest { flex: 1 1 130px; min-height: 46px; padding: 10px 8px; font: 400 15px/1.2 var(--wl-cjk); color: var(--wl-ink); background: none; border: 1px solid var(--wl-line-strong); border-radius: 0; cursor: pointer; }
+.wl-guest:hover { background: var(--pen-soft); }
+.wl-login-note { width: min(420px, 100%); font-size: 13px; text-align: left; }
+.wl-entry[data-stage="login"] .wl-entry-skip { display: none; }
+.wl-entry[data-stage="login"] .wl-entry-status { position: absolute; }
+.wl-entry:not([data-stage="login"]) .wl-login, .wl-entry:not([data-stage="login"]) .wl-login-note { display: none; }
+/* The title page is the one place written in both languages. */
+.wl-title-en { margin: -6px 0 0; font: 700 clamp(17px, 2.6vw, 22px)/1.3 var(--wl-cjk); color: var(--wl-ink); }
+.wl-sub-en { margin: -4px 0 0; font-size: 13px; line-height: 1.5; color: var(--wl-ink-2); }
+.wl-en { font-size: 13px; color: var(--wl-ink-2); }
+.wl-start .wl-en { display: block; margin-top: 2px; font-size: 12px; color: inherit; opacity: .85; }
+.wl-guest .wl-en { display: block; margin-top: 2px; font-size: 12px; color: inherit; opacity: .85; }
+.wl-en-block { display: block; margin-top: 4px; }
+/* A loader, when one is installed, has the screen to itself until it reveals the room. */
+.wl-entry[data-stage="loader"] > * { visibility: hidden; }
 .wl-entry[data-stage="loading"] .wl-entry-load { display: block; }
 .wl-entry[data-stage="loading"] .wl-entry-load i { transform: none; }
 @media (prefers-reduced-motion: no-preference) {
   .wl-entry[data-stage="loading"] .wl-entry-load i { animation: wl-load 1.5s ease-out; }
   @keyframes wl-load { from { transform: scaleX(0); } to { transform: none; } }
 }
-/* The figure stands below the window in its own grid row, so the two can never overlap. Its rooftop runs off the left of the screen. */
+/* The figure stands below the window in its own grid row, so the two can never overlap. The row takes what the window leaves, up to --wl-art-h, and the screen only scrolls when even its minimum will not fit. Its rooftop runs off the left of the screen. */
 .wl-entry-art {
-  justify-self: stretch; display: flex; justify-content: center; align-items: flex-end; height: clamp(170px, 36vh, 340px); min-height: 0; pointer-events: none;
+  justify-self: stretch; display: flex; justify-content: center; align-items: flex-end; min-height: 0; pointer-events: none;
   margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
 }
 .wl-entry-art .wl-learner { flex: 1 1 100%; min-width: 0; }
 .wl-entry-art .wl-art-slot:not(:empty) { flex: 1 1 50%; }
 /* Enough height: the figure takes more of the screen. */
 @media (min-height: 700px) {
-  .wl-entry-art { height: clamp(170px, 42vh, 440px); }
+  .wl-entry { --wl-art-h: clamp(170px, 42vh, 440px); }
 }
 /* A landscape phone: the figure gives way so the button and status stay on screen. */
 @media (max-height: 520px) {
-  .wl-entry { overflow-y: auto; grid-template-rows: 1fr; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .wl-entry { grid-template-rows: 1fr; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
   .wl-entry-window { align-self: center; padding: 16px; gap: 6px; }
   .wl-entry-art { display: none; }
   .wl-start { min-height: 44px; margin-top: 2px; }
@@ -208,12 +229,21 @@ a { color: var(--wl-accent-text); text-underline-offset: 3px; }
 .wl-bar-link { font-size: 14px; }
 .wl-bar-gap { flex: 1 1 auto; }
 .wl-bar-clock { font-variant-numeric: tabular-nums; font-family: var(--wl-mono); }
-.wl-theme { display: flex; border: 1px solid var(--wl-line-strong); }
+.wl-theme { flex: none; display: flex; border: 1px solid var(--wl-line-strong); }
 .wl-theme button {
   border: 0; background: transparent; color: var(--wl-ink-2); font: 400 13px/1 var(--wl-cjk);
   padding: 7px 10px; min-height: 30px; cursor: pointer; transition: color .3s ease-out, background-color .3s ease-out;
 }
 .wl-theme button[aria-pressed="true"] { background: var(--pen); color: var(--pen-ink); }
+/* Who is practising, and the switch that reloads the page. A reload would end a round, so it does not show during one. */
+.wl-bar-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wl-user { position: relative; min-width: 0; max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.wl-switch-user { flex: none; min-height: 30px; padding: 0; border: 0; background: none; font: 400 14px/1.2 var(--wl-cjk); color: var(--wl-accent-text); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+body.wl-session .wl-switch-user, body.wl-round .wl-switch-user { display: none; }
+/* The warning before a switch would lose typed text. It stays in the page empty, so a screen reader hears it arrive. */
+.wl-bar-msg { position: absolute; top: 100%; right: 24px; width: max-content; max-width: min(420px, calc(100vw - 32px)); margin: 6px 0 0; padding: 8px 12px; font-size: 14px; line-height: 1.6; color: var(--warn); background: var(--wl-glass-solid); border: 1px solid var(--warn); }
+.wl-bar-msg:empty { margin: 0; padding: 0; border: 0; }
+body.wl-round .wl-bar-msg { display: none; }
 
 /* The figure stands in a gutter; the centre column is the only place with text or controls, so they can never overlap. */
 .wl-layout {
@@ -322,7 +352,8 @@ body.wl-session .wl-hero .wl-title { font-size: 24px; }
   :root[data-theme="light"] {
   --hud-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' fill='none'%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' fill='%23E9F4FA' fill-opacity='.92'/%3E%3Cpath d='M17 7H57V47L47 57H7V17Z' stroke='%23FFFFFF' stroke-opacity='.75'/%3E%3Cpath d='M16 5H59V48L48 59H5V16Z' stroke='%230E5570' stroke-width='1.2'/%3E%3Cpath d='M5 18V16L16 5H18M59 46V48L48 59H46' stroke='%230A2A3C' stroke-width='2'/%3E%3Cpath d='M48 9H55V16M9 48V55H16' stroke='%230E5570' stroke-opacity='.6'/%3E%3C/svg%3E");
   }
-  .wl-bar { position: static; height: calc(var(--wl-bar-h) + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); gap: 12px; }
+  .wl-bar { position: relative; height: calc(var(--wl-bar-h) + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); gap: 12px; }
+  .wl-bar-msg { right: max(16px, env(safe-area-inset-right)); }
   .wl-foot { padding: 14px max(16px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   /* 退出 stays in the session header */
   body.wl-session .wl-bar, body.wl-session .wl-hero, body.wl-session .wl-about, body.wl-session .wl-foot { display: none; }
@@ -330,10 +361,17 @@ body.wl-session .wl-hero .wl-title { font-size: 24px; }
   body.wl-session .wl-meter { height: 24px; margin: 0 0 6px; }
   body.wl-session .wl-meter canvas { height: 24px; }
 }
+/* Too narrow for one row: who is practising and the switch take a second one. */
+@media (max-width: 767px) {
+  .wl-bar { flex-wrap: wrap; height: auto; min-height: calc(var(--wl-bar-h) + env(safe-area-inset-top, 0px)); padding-top: calc(6px + env(safe-area-inset-top, 0px)); padding-bottom: 6px; row-gap: 4px; }
+  .wl-bar-who { order: 1; flex: 1 1 100%; }
+  .wl-user { flex: 0 1 auto; max-width: none; margin-right: auto; }
+}
 @media (max-width: 599px) {
   /* A phone sees a slice of the picture: frame a burst, a silence and the next attack, and give the ridge the top of the entry screen. */
   :root[data-theme="light"] body::before { background-position: 47.5% 100%, 0 0; }
-  :root[data-theme="light"] .wl-entry-art { height: clamp(170px, 33vh, 300px); }
+  :root[data-theme="light"] .wl-entry { --wl-art-h: clamp(170px, 33vh, 300px); }
+  .wl-entry-window { padding: 20px 16px 16px; gap: 10px; }
   .wl-hero { padding: 14px 14px 12px; gap: 8px 6px; }
   .wl-main { padding: 14px 12px 16px; }
   .wl-about { padding: 14px; }
@@ -374,5 +412,6 @@ body.wl-session .wl-hero .wl-title { font-size: 24px; }
   :root[data-theme="light"] body::before { background: Canvas; }
   .hud, .wl-rank { border: 1px solid CanvasText; border-image: none; }
   .wl-start { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+  .wl-theme button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .wl-exp-bar i, .wl-entry-load i { background: Highlight; forced-color-adjust: none; }
 }

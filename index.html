@@ -8,18 +8,20 @@
 <meta name="description" content="雅思听力 · 每日听写：每日任务、待攻克和真实的 EXP 进度。">
 <title>《我独自学习》</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M8 1H31V24L24 31H1V8Z' fill='%23130833' stroke='%23B07CFF' stroke-width='2'/%3E%3Cpath d='M8 16v2M12 12v10M16 9v14M20 13v8M24 15v4' stroke='%23FFC46B' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<script src="js/profile.js"></script>
 <script>
-/* Runs before first paint: applies the theme (night unless light was chosen) and skips the entry once it has been seen this session. */
+/* Runs before first paint: applies the theme (night unless light was chosen) and skips the login once this tab has entered with a known profile. js/site.js decides by the same condition. */
 (function () {
   var d = document.documentElement, t = null, seen = false;
   try { t = localStorage.getItem("wliu-site-theme"); } catch (e) {}
   d.setAttribute("data-theme", t === "light" ? "light" : "dark");
-  try { seen = sessionStorage.getItem("wliu-site-entered") === "1"; } catch (e) {}
+  try { seen = sessionStorage.getItem("wliu-site-entered") === "1" && WLIU_PROFILE.read() !== null; } catch (e) {}
   d.classList.add(seen ? "wl-entered" : "wl-entry-open");
-  /* js/site.js is what wires the start button, so without it the entry screen must not stay up. */
+  /* js/site.js is what wires the login form, so without it the entry screen must not stay up. */
   window.wlShellFailed = function () {
     d.classList.remove("wl-entry-open");
     document.getElementById("wl-entry").hidden = true;
+    document.querySelector(".wl-bar-who").hidden = true;
     document.getElementById("wl-listen").innerHTML = '<p class="wl-noscript" role="alert">页面没有加载完整，请刷新页面再试一次。</p>';
   };
 })();
@@ -27,7 +29,8 @@
 <link rel="stylesheet" href="css/site.css">
 <link rel="stylesheet" href="listening/listening.css">
 <link rel="stylesheet" href="listening/summary.css">
-<noscript><style>.wl-entry { display: none; }</style></noscript>
+<link rel="stylesheet" href="css/loader.css">
+<noscript><style>.wl-entry, .wl-bar-who { display: none; }</style></noscript>
 </head>
 <body>
 <svg class="wl-city" viewBox="0 0 1600 900" preserveAspectRatio="xMaxYMax slice" aria-hidden="true" focusable="false">
@@ -90,15 +93,26 @@
 <!-- Day theme only: a few flakes drifting in the gutters. The snowfield itself is a background picture set in css/site.css. -->
 <div class="wl-drift" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-<div id="wl-entry" class="wl-entry" data-stage="standby">
+<div id="wl-entry" class="wl-entry" data-stage="login">
   <div class="wl-entry-window hud">
     <h1 class="wl-title">《我独自学习》</h1>
+    <p class="wl-title-en" lang="en">I Study Alone</p>
     <p class="wl-sub">雅思听力 · 每日听写</p>
-    <button type="button" id="wl-start" class="wl-start">开始学习</button>
+    <p class="wl-sub-en" lang="en">IELTS Listening · Daily Dictation</p>
+    <form id="wl-login" class="wl-login" novalidate autocomplete="off">
+      <label for="wl-login-name">用户名 <span class="wl-en" lang="en">Username</span></label>
+      <input id="wl-login-name" class="wl-login-input" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="64" aria-describedby="wl-login-error wl-login-note">
+      <p id="wl-login-error" class="wl-login-error" role="alert" hidden></p>
+      <div class="wl-login-actions">
+        <button type="submit" class="wl-start">登录 <span class="wl-en" lang="en">Log in</span></button>
+        <button type="button" id="wl-guest" class="wl-guest">访客登录 <span class="wl-en" lang="en">Continue as guest</span></button>
+      </div>
+    </form>
+    <p id="wl-login-note" class="wl-entry-note wl-login-note">不需要密码。用户名只用来在这个浏览器里分开保存进度，不能跨设备同步；这台设备上输入同一个名字的人都能看到这份进度。<span class="wl-en-block" lang="en">No password needed. The name only keeps progress separate in this browser. It does not sync across devices, and anyone on this device who types the same name sees that progress.</span></p>
     <div class="wl-entry-load" aria-hidden="true"><i></i></div>
     <p class="wl-entry-status" id="wl-entry-status" aria-live="polite"></p>
-    <p class="wl-entry-skip">点击或按任意键跳过</p>
-    <p class="wl-entry-note">非官方个人学习工具，未获 IELTS（雅思）主办方或《我独自升级》权利方的认可或授权。</p>
+    <p class="wl-entry-skip">点击或按任意键跳过 <span class="wl-en" lang="en">Click or press any key to skip</span></p>
+    <p class="wl-entry-note">非官方个人学习工具，未获 IELTS（雅思）主办方或《我独自升级》权利方的认可或授权。<span class="wl-en-block" lang="en">Unofficial personal study tool, not endorsed or licensed by the IELTS partners or the rights holders of Solo Leveling.</span></p>
   </div>
   <div class="wl-entry-art">
     <img class="wl-learner" src="assets/learner.svg" alt="" width="280" height="560">
@@ -115,10 +129,15 @@
     <span class="wl-bar-gap"></span>
     <a class="wl-bar-link" href="#wl-about-title">关于</a>
     <span class="wl-label wl-bar-clock"><span class="ls-sr">本地时间 </span><span data-clock>--:--</span></span>
+    <div class="wl-bar-who">
+      <span class="wl-user"><span class="ls-sr">当前用户：</span><bdi id="wl-user-name"></bdi></span>
+      <button type="button" class="wl-switch-user" id="wl-switch-user">切换用户</button>
+    </div>
     <div class="wl-theme" role="group" aria-label="明暗">
       <button type="button" data-theme-set="light" aria-pressed="false">日间</button>
       <button type="button" data-theme-set="dark" aria-pressed="true">夜间</button>
     </div>
+    <p class="wl-bar-msg" id="wl-bar-msg" role="status"></p>
   </header>
 
   <div class="wl-layout">
@@ -181,7 +200,7 @@
         <h2 id="wl-about-title" tabindex="-1">关于这里</h2>
         <p class="wl-bio" id="wl-bio" hidden></p>
         <p>网站源代码：<a class="wl-handle" href="https://github.com/wliu0818sydney-code/wliu-site" rel="noopener">wliu0818sydney-code/wliu-site</a></p>
-        <p class="wl-quiet">隐私：练习记录只保存在你自己的浏览器里，本站没有服务器，也没有统计或广告。网站托管在 GitHub Pages，GitHub 可能记录访问日志。部分浏览器的语音由其厂商在线合成，发送的只是本站的单词和短文。“自带视频”只有在你点击加载后才会连接 YouTube，这时视频 ID 会发给它，它也可能写入 Cookie。点击加载即表示同意 <a href="https://www.youtube.com/t/terms" rel="noopener">YouTube 服务条款</a>，数据处理适用 <a href="https://policies.google.com/privacy" rel="noopener">Google 隐私权政策</a>。</p>
+        <p class="wl-quiet">隐私：用户名和练习记录只保存在你自己的浏览器里，不会上传；本站没有服务器，也没有统计或广告。登录不需要密码，这台设备上输入同一个名字的人都能看到这份进度。网站托管在 GitHub Pages，GitHub 可能记录访问日志。部分浏览器的语音由其厂商在线合成，发送的只是本站的单词和短文。“自带视频”只有在你点击加载后才会连接 YouTube，这时视频 ID 会发给它，它也可能写入 Cookie。点击加载即表示同意 <a href="https://www.youtube.com/t/terms" rel="noopener">YouTube 服务条款</a>，数据处理适用 <a href="https://policies.google.com/privacy" rel="noopener">Google 隐私权政策</a>。</p>
       </section>
     </div>
 
@@ -202,6 +221,7 @@
 <script src="listening/summary-data.js"></script>
 <script src="listening/summary-core.js"></script>
 <script src="listening/summary.js"></script>
+<script src="js/loader.js"></script>
 <script src="js/site.js" onerror="wlShellFailed()"></script>
 </body>
 </html>

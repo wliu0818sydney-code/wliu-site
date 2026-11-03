@@ -4,7 +4,7 @@
   "use strict";
 
   const C = root.WLIU_LISTENING_CORE;
-  const { LISTS, OFFSETS, RATE, SLOW, KEY, PKEY, ACCENTS, REGION, SAMPLE, LAST_DAY, ITEMS, ZH_COUNT,
+  const { LISTS, OFFSETS, RATE, SLOW, ACCENTS, REGION, SAMPLE, LAST_DAY, ITEMS, ZH_COUNT,
     learnDay, listItems, topic, today, fmtDate, plausibleStart, esc, grade, isRight, fixHTML, blank, sane, sanePrefs, parseImport, EXP_MAX, masteredCount, rankOf, rankUp } = C;
 
   const ICON_PLAY = '<svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path d="M3.5 9.2v5.6h3.9l5.1 4.2V5L7.4 9.2z" fill="currentColor"/><path d="M15.8 8.6a4.8 4.8 0 0 1 0 6.8M18.4 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
@@ -43,7 +43,8 @@
   /* The live region is always rendered, so screen readers announce changes to its text. */
   function say(text) { const el = $("ls-live"); if (el && el.textContent !== text) el.textContent = text; }
 
-  /* ---------- storage: this browser only ---------- */
+  /* ---------- storage: this browser only, one set of keys per profile, and nothing is read until mount knows the profile ---------- */
+  let KEY = C.KEY, PKEY = C.PKEY;
   let saveFailed = false;
   function noteSave(ok) {
     saveFailed = !ok;
@@ -58,8 +59,8 @@
   function loadPrefs() { try { return JSON.parse(localStorage.getItem(PKEY) || "null"); } catch (e) { return null; } }
   function savePrefs() { try { localStorage.setItem(PKEY, JSON.stringify(prefs)); } catch (e) { noteSave(false); } }
 
-  let S = loadLocal() || blank();
-  const prefs = sanePrefs(loadPrefs());
+  let S = blank();
+  let prefs = sanePrefs(null);
   const M = C.model(() => S);
   const { status, daysOf, learned, doneToday, dayNo, wrongItems, allWrong, firstReview, plan, taskItems } = M;
 
@@ -659,7 +660,11 @@
     };
   }
 
-  function mount(el) {
+  function mount(el, profile) {
+    KEY = root.WLIU_PROFILE.keyFor(C.KEY, profile);
+    PKEY = root.WLIU_PROFILE.keyFor(C.PKEY, profile);
+    S = loadLocal() || blank();
+    prefs = sanePrefs(loadPrefs());
     appRoot = el;
     el.classList.add("ls-app");
     el.innerHTML = SHELL;

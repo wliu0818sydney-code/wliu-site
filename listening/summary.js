@@ -76,22 +76,23 @@
     sayTimer = setTimeout(() => { el.textContent = text; }, 60);
   }
 
-  /* ---------- storage: its own key; a failed read or write never stops practice ---------- */
+  /* ---------- storage: its own keys, one set per profile, and nothing is read until mount knows the profile; a failed read or write never stops practice ---------- */
+  let KEY = Y.KEY, RECOVERY_KEY = Y.RECOVERY_KEY;
   let saveFailed = false, copyFailed = false, armDiscard = false;
   function noteSave(ok) { saveFailed = !ok; const el = $("sm-save-warn"); if (el) el.hidden = ok; }
   /* Anything present that cannot be read is copied aside first, because the next save would otherwise overwrite it for good. */
   function loadStore() {
     try {
-      const raw = localStorage.getItem(Y.KEY), got = Y.readStored(raw);
+      const raw = localStorage.getItem(KEY), got = Y.readStored(raw);
       copyFailed = false;
       if (got.damaged) {
-        try { localStorage.setItem(Y.RECOVERY_KEY, raw); } catch (e) { copyFailed = true; }
+        try { localStorage.setItem(RECOVERY_KEY, raw); } catch (e) { copyFailed = true; }
       }
       return got.store;
     } catch (e) { saveFailed = true; return Y.blankStore(); }
   }
   function recoveryText() {
-    try { return localStorage.getItem(Y.RECOVERY_KEY); } catch (e) { return null; }
+    try { return localStorage.getItem(RECOVERY_KEY); } catch (e) { return null; }
   }
   function paintLoadWarn() {
     const el = $("sm-load-warn");
@@ -108,10 +109,10 @@
   }
   /* Returns whether it really reached storage, so the page never claims a save that did not happen. */
   function saveStore() {
-    try { localStorage.setItem(Y.KEY, JSON.stringify(store)); noteSave(true); return true; }
+    try { localStorage.setItem(KEY, JSON.stringify(store)); noteSave(true); return true; }
     catch (e) { noteSave(false); return false; }
   }
-  let store = loadStore();
+  let store = Y.blankStore();
 
   /* ---------- outward events ---------- */
   const handlers = { view: [], speech: [] };
@@ -717,6 +718,11 @@
   }
 
   /* ---------- mode 2: saved clips ---------- */
+  /* Text in the video form that a reload would lose: anything other than the form as it was last saved or loaded from a clip. */
+  const FORM_FIELDS = ["sm-url", "sm-start", "sm-end", "sm-v-summary", "sm-v-missed", "sm-v-title"];
+  const formText = () => FORM_FIELDS.map((id) => { const el = $(id); return el ? el.value.trim() : ""; }).join("\n");
+  let settledForm = "";
+  function hasDraft() { const now = formText(); return /\S/.test(now) && now !== settledForm; }
   function saveClip() {
     const msg = $("sm-clip-msg");
     msg.textContent = "";
@@ -734,6 +740,7 @@
     const ok = saveStore();
     msg.textContent = ok ? "已保存到这台设备。" : "没能写入浏览器，刷新后会丢失，请先导出。";
     $("sm-v-summary").value = ""; $("sm-v-missed").value = ""; $("sm-v-title").value = "";
+    if (ok) settledForm = formText();
     renderClips();
   }
   function renderClips() {
@@ -762,6 +769,7 @@
     $("sm-v-title").value = c.title;
     $("sm-v-summary").value = c.notes.summary;
     $("sm-v-missed").value = c.notes.missed;
+    settledForm = formText();
     showMsg("sm-seg-msg", "");
     showMsg("sm-url-msg", "");
     $("sm-clip-msg").textContent = "已载入，保存时会另存一条。" + (playerReady ? "" : "要播放的话，请先点「加载 YouTube 播放器」。");
@@ -803,7 +811,7 @@
     else if (act === "recovery-discard") {
       if (!armDiscard) { armDiscard = true; paintLoadWarn(); refocusIn($("sm-load-warn"), '[data-act="recovery-discard"]'); return; }
       armDiscard = false;
-      try { localStorage.removeItem(Y.RECOVERY_KEY); } catch (e) { /* the warning simply stays */ }
+      try { localStorage.removeItem(RECOVERY_KEY); } catch (e) { /* the warning simply stays */ }
       paintLoadWarn();
       focusCurrent();
     }
@@ -884,7 +892,10 @@
     if (t && t.id === "sm-import-file") { const file = t.files && t.files[0]; t.value = ""; readImport(file); }
   }
 
-  function mount(el, app) {
+  function mount(el, app, profile) {
+    KEY = root.WLIU_PROFILE.keyFor(Y.KEY, profile);
+    RECOVERY_KEY = root.WLIU_PROFILE.keyFor(Y.RECOVERY_KEY, profile);
+    store = loadStore();
     App = app;
     mountEl = el;
     el.classList.add("ls-app");
@@ -902,7 +913,7 @@
       try { window.speechSynthesis.addEventListener("voiceschanged", onVoices); } catch (e) { window.speechSynthesis.onvoiceschanged = onVoices; }
     }
     window.addEventListener("storage", (e) => {
-      if (e.key === Y.KEY || e.key === Y.RECOVERY_KEY || e.key === null) { store = loadStore(); paintLoadWarn(); renderClips(); if (!sess && mode === "own") renderM1Home(); }
+      if (e.key === KEY || e.key === RECOVERY_KEY || e.key === null) { store = loadStore(); paintLoadWarn(); renderClips(); if (!sess && mode === "own") renderM1Home(); }
     });
     window.addEventListener("pagehide", hush);
   }
@@ -913,5 +924,5 @@
     if (el) el.focus({ preventScroll: true });
   }
 
-  root.WLIU_SUMMARY = { mount, on, hush, focusCurrent, inSession: () => !!sess };
+  root.WLIU_SUMMARY = { mount, on, hush, focusCurrent, hasDraft, inSession: () => !!sess };
 })(window);

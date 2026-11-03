@@ -10,6 +10,7 @@
 <body>
 <h1 id="sum">running</h1>
 <pre id="out"></pre>
+<script src="../js/profile.js"></script>
 <script src="../listening/data.js"></script>
 <script src="../listening/core.js"></script>
 <script src="../listening/summary-data.js"></script>
@@ -437,9 +438,254 @@
   eq("attempt does not touch dictation state", JSON.stringify(dictBefore), dictSnapshot);
   eq("attempt does not move mastered count", C.masteredCount(dictBefore), 1);
 
-  document.getElementById("sum").textContent = (fail ? "FAILED " : "PASSED ") + pass + " passed, " + fail + " failed";
-  document.getElementById("sum").className = fail ? "f" : "p";
-  document.getElementById("out").textContent = lines.join("\n");
+  /* ---------- usernames ---------- */
+  const P = window.WLIU_PROFILE, nameCode = (x) => P.normalize(x).code;
+  eq("name kept", P.normalize("Alice"), { ok: true, name: "Alice", id: "alice" });
+  eq("name id is lower-cased, name keeps its case", [P.normalize("AliCE").name, P.normalize("AliCE").id], ["AliCE", "alice"]);
+  eq("names differing only by case share an id", P.normalize("ALICE").id === P.normalize("alice").id, true);
+  eq("name in Chinese", P.normalize("小明"), { ok: true, name: "小明", id: "小明" });
+  eq("name in another script", P.normalize("Женя").id, "женя");
+  eq("name with an emoji", P.normalize("❤️ 小明").ok, true);
+  ["", "   ", "\t\n", "　", "  ", null, undefined, 5, {}, []].forEach((x) => eq("name empty " + JSON.stringify(x), nameCode(x), "empty"));
+  eq("name trimmed", P.normalize("  Al  ").name, "Al");
+  eq("name trims tabs and newlines at the ends", P.normalize("\tAl\r\n").name, "Al");
+  eq("name inner spaces collapse", P.normalize("a 　  b").name, "a b");
+  eq("name NFKC folds full-width", P.normalize("ＡＬＩＣＥ１").name, "ALICE1");
+  eq("name NFKC folds the full-width space", P.normalize("小　明").name, "小 明");
+  eq("name NFKC composes", P.normalize("é").name, "é");
+  eq("name NFKC gives one id for both forms", P.normalize("Ｅ́").id, P.normalize("É").id);
+  eq("name 20 code points", P.normalize("a".repeat(20)).ok, true);
+  eq("name 21 code points", nameCode("a".repeat(21)), "long");
+  eq("name 20 Chinese", P.normalize("字".repeat(20)).ok, true);
+  eq("name 21 Chinese", nameCode("字".repeat(21)), "long");
+  eq("name counts code points, not UTF-16 units", P.normalize("😀".repeat(20)).ok, true);
+  eq("name 21 astral code points", nameCode("😀".repeat(21)), "long");
+  eq("name length ignores the trimmed spaces", P.normalize("  " + "a".repeat(20) + "  ").ok, true);
+  eq("name length counts after NFKC", nameCode("ﷺ" + "abc"), "long");
+  [["zero-width space", 0x200b], ["zero-width non-joiner", 0x200c], ["zero-width joiner", 0x200d], ["word joiner", 0x2060], ["BOM", 0xfeff], ["soft hyphen", 0xad],
+    ["LRM", 0x200e], ["RLM", 0x200f], ["ALM", 0x61c], ["LRE", 0x202a], ["RLE", 0x202b], ["PDF", 0x202c], ["LRO", 0x202d], ["RLO", 0x202e], ["LRI", 0x2066], ["RLI", 0x2067], ["FSI", 0x2068], ["PDI", 0x2069],
+    ["NUL", 0], ["BEL", 7], ["tab", 9], ["newline", 10], ["ESC", 27], ["DEL", 0x7f], ["NEL", 0x85], ["line separator", 0x2028], ["paragraph separator", 0x2029], ["private use", 0xe000], ["lone surrogate", 0xd800]
+  ].forEach((c) => eq("name rejects inner " + c[0], nameCode("a" + String.fromCharCode(c[1]) + "b"), "chars"));
+  eq("name of only a zero-width character", nameCode("​"), "chars");
+  eq("name with a bidi override at the start", nameCode("‮abc"), "chars");
+  eq("name that looks like markup is kept as text", P.normalize("<img src onerror=a>").name, "<img src onerror=a>");
+  eq("the long form of that markup is refused by length", nameCode("<img src=x onerror=alert(1)>"), "long");
+  ["__proto__", "constructor", "toString", "hasOwnProperty"].forEach((n) => eq("name " + n + " is an ordinary name", P.normalize(n), { ok: true, name: n, id: n.toLowerCase() }));
+  eq("name __proto__ pollutes nothing", ({}).polluted, undefined);
+
+  /* ---------- keys ---------- */
+  const user = (n) => { const r = P.normalize(n); return { kind: "user", name: r.name, id: r.id }; };
+  eq("key guest", P.keyFor("k", { kind: "guest" }), "k");
+  eq("key no profile", [P.keyFor("k", null), P.keyFor("k", undefined)], ["k", "k"]);
+  eq("key user", P.keyFor(C.KEY, user("Alice")), "ielts-dictation-v1@alice");
+  eq("key case does not split a user", P.keyFor("k", user("ALICE")), P.keyFor("k", user("alice")));
+  eq("key encodes spaces", P.keyFor("k", user("a b")), "k@a%20b");
+  eq("key encodes Chinese", P.keyFor("k", user("小明")), "k@%E5%B0%8F%E6%98%8E");
+  eq("key encodes the separator", P.keyFor("k", user("a@b")), "k@a%40b");
+  eq("key encodes markup", P.keyFor("k", user("<b>")), "k@%3Cb%3E");
+  eq("key __proto__", P.keyFor("k", user("__proto__")), "k@__proto__");
+  eq("key every store apart", new Set([C.KEY, C.PKEY, Y.KEY, Y.RECOVERY_KEY].map((b) => P.keyFor(b, user("a")))).size, 4);
+  eq("key no name reaches another store", P.keyFor(Y.KEY, user("a-recovery")) !== P.keyFor(Y.RECOVERY_KEY, user("a")), true);
+
+  /* ---------- a throwaway frame with stubbed storage and speech, so nothing below can touch real progress or make a sound ---------- */
+  const fakeStorage = (seed, log) => {
+    const data = new Map(Object.entries(seed || {}));
+    return { data, api: {
+      getItem(k) { log.push("get " + k); return data.has(k) ? data.get(k) : null; },
+      setItem(k, v) { log.push("set " + k); data.set(k, String(v)); },
+      removeItem(k) { log.push("remove " + k); data.delete(k); }
+    } };
+  };
+  function sandbox(o, scripts) {
+    return new Promise((resolve, reject) => {
+      const f = document.createElement("iframe");
+      let begun = false;
+      f.style.cssText = "position:absolute;left:-9999px;width:900px;height:700px";
+      f.onload = () => {
+        if (begun) return;
+        begun = true;
+        const win = f.contentWindow, log = [], local = fakeStorage(o.local, log), session = fakeStorage(null, []);
+        const guard = (s) => () => { if (o.blocked) throw new win.DOMException("denied", "SecurityError"); return s.api; };
+        const define = (obj, name, get) => Object.defineProperty(obj, name, { configurable: true, get });
+        define(win, "localStorage", guard(local));
+        define(win, "sessionStorage", guard(session));
+        const silent = { speak() {}, cancel() {}, resume() {}, getVoices: () => [], addEventListener() {} };
+        define(win, "speechSynthesis", () => silent);
+        const load = (src) => new Promise((ok, bad) => {
+          const s = win.document.createElement("script");
+          s.src = new URL(src, location.href).href;
+          s.onload = ok;
+          s.onerror = () => bad(new Error("could not load " + src));
+          win.document.head.appendChild(s);
+        });
+        scripts.reduce((p, src) => p.then(() => load(src)), Promise.resolve()).then(() => resolve({ win, log, data: local.data, session: session.data, frame: f }), reject);
+      };
+      document.body.appendChild(f);
+    });
+  }
+  const waitFor = (fn) => new Promise((ok, bad) => {
+    const t0 = Date.now();
+    (function poll() { const v = fn(); if (v) ok(v); else if (Date.now() - t0 > 3000) bad(new Error("timed out: " + fn)); else setTimeout(poll, 20); })();
+  });
+
+  async function profileStoreTests() {
+    const KEY = "wliu-site-profile", TAB = "wliu-site-tab-profile", s = await sandbox({}, ["../js/profile.js"]), Q = s.win.WLIU_PROFILE;
+    eq("profile absent", [Q.read(), Q.lastName()], [null, ""]);
+    eq("profile save user", Q.save({ kind: "user", name: "Alice", id: "alice" }), true);
+    eq("profile read user", Q.read(), { kind: "user", name: "Alice", id: "alice" });
+    eq("profile last name", Q.lastName(), "Alice");
+    eq("profile save guest", Q.save({ kind: "guest" }), true);
+    eq("profile read guest", Q.read(), { kind: "guest" });
+    eq("profile a guest remembers the last name", Q.lastName(), "Alice");
+    Q.save({ kind: "guest" });
+    eq("profile a second guest login still does", Q.lastName(), "Alice");
+    eq("profile save refuses nonsense", [Q.save(null), Q.save({}), Q.save({ kind: "admin" }), Q.save({ kind: "user", name: "" }), Q.save({ kind: "user", name: "a​b", id: "a​b" })], [false, false, false, false, false]);
+    eq("profile a refused save changes nothing", Q.read(), { kind: "guest" });
+    Q.save({ kind: "user", name: "  ＡＬＩＣＥ  ", id: "whatever" });
+    eq("profile save normalizes", Q.read(), { kind: "user", name: "ALICE", id: "alice" });
+    ["{broken", "null", "5", "\"guest\"", "[]", "{}", '{"kind":"admin"}', '{"kind":"user"}', '{"kind":"user","name":"","id":""}', '{"kind":"user","name":"Alice","id":"bob"}',
+      JSON.stringify({ kind: "user", name: "a​b", id: "a​b" }), JSON.stringify({ kind: "user", name: "x".repeat(21), id: "x".repeat(21) }), '{"__proto__":{"kind":"guest"}}'
+    ].forEach((raw) => { s.session.set(TAB, raw); eq("profile invalid reads null: " + raw.slice(0, 40), Q.read(), null); });
+    Q.save({ kind: "user", name: "Alice", id: "alice" });
+    s.data.set(KEY, JSON.stringify({ kind: "user", name: "Bob", id: "bob" }));
+    eq("profile a tab keeps its user when another tab logs in", [Q.read().name, Q.lastName()], ["Alice", "Bob"]);
+    s.session.delete(TAB);
+    eq("profile a new tab has no user yet but knows the last name", [Q.read(), Q.lastName()], [null, "Bob"]);
+    s.data.set(KEY, '{"__proto__":{"kind":"guest"}}');
+    eq("profile __proto__ in the stored text pollutes nothing", [Q.lastName(), ({}).kind], ["", undefined]);
+    s.session.set(TAB, '{"kind":"user","name":"__proto__","id":"__proto__"}');
+    eq("profile user named __proto__", Q.read(), { kind: "user", name: "__proto__", id: "__proto__" });
+    s.session.set(TAB, '{"kind":"guest","last":"A","evil":1}');
+    eq("profile extra stored fields do not survive", Q.read(), { kind: "guest" });
+    s.data.set(KEY, '{"kind":"guest","last":"a\\u202eb"}');
+    eq("profile bad remembered name is dropped", Q.lastName(), "");
+    s.frame.remove();
+    const b = await sandbox({ blocked: true }, ["../js/profile.js"]), B = b.win.WLIU_PROFILE;
+    eq("profile storage blocked throws nothing", [B.read(), B.lastName(), B.save({ kind: "guest" }), B.save({ kind: "user", name: "A", id: "a" })], [null, "", false, false]);
+    b.frame.remove();
+  }
+
+  /* The real modules, mounted for different profiles over the same storage. */
+  async function moduleTests() {
+    const SCRIPTS = ["../js/profile.js", "../listening/data.js", "../listening/core.js", "../listening/listening.js", "../listening/summary-data.js", "../listening/summary-core.js", "../listening/summary.js"];
+    const alice = { kind: "user", name: "Alice", id: "alice" }, stores = (log) => log.filter((x) => /ielts|summary/.test(x));
+    const guestState = JSON.stringify({ v: 1, start: "2026-11-01", u: 1, w: { "1-1": [1, 0, "2026-11-01"] }, l: {}, last: {} });
+    const guestPrefs = JSON.stringify({ mode: "zh", accent: "en-AU" });
+    const guestSum = JSON.stringify({ v: 1, attempts: [], clips: [] });
+    const seed = { "ielts-dictation-v1": guestState, "ielts-dictation-prefs": guestPrefs, "wliu-listen-summary-v1": guestSum };
+    const place = (s) => { const d = s.win.document, a = d.createElement("div"), b = d.createElement("div"); d.body.append(a, b); return { d, a, b, App: s.win.WLIU_LISTENING, Sum: s.win.WLIU_SUMMARY }; };
+
+    /* a guest gets the old keys, so progress from before there were profiles is still there */
+    const g = await sandbox({ local: seed }, SCRIPTS), gp = place(g);
+    eq("modules read no store at load", stores(g.log), []);
+    gp.App.mount(gp.a, { kind: "guest" });
+    gp.Sum.mount(gp.b, gp.App, { kind: "guest" });
+    eq("guest reads the old keys", stores(g.log), ["get ielts-dictation-v1", "get ielts-dictation-prefs", "get wliu-listen-summary-v1", "get wliu-listen-summary-v1-recovery"]);
+    eq("guest keeps the old progress and choices", [gp.App.summary().mastered, gp.App.summary().mode], [1, "zh"]);
+    g.frame.remove();
+
+    /* a user gets their own keys and leaves the guest's alone */
+    const u = await sandbox({ local: seed }, SCRIPTS), up = place(u);
+    eq("modules before mount report a blank state", up.App.summary().mastered, 0);
+    up.App.mount(up.a, alice);
+    eq("user reads only their own dictation keys", stores(u.log), ["get ielts-dictation-v1@alice", "get ielts-dictation-prefs@alice"]);
+    eq("a new user starts at 0 with default choices", [up.App.summary().mastered, up.App.summary().mode], [0, "audio"]);
+    up.a.querySelector('[data-act="mode"][data-v="zh"]').click();
+    eq("choices save under the user's key", JSON.parse(u.data.get("ielts-dictation-prefs@alice")).mode, "zh");
+    up.a.querySelector('[data-act="task"]').click();
+    eq("progress saves under the user's key", JSON.parse(u.data.get("ielts-dictation-v1@alice")).start !== null, true);
+    eq("the guest's stores are untouched", [u.data.get("ielts-dictation-v1"), u.data.get("ielts-dictation-prefs")], [guestState, guestPrefs]);
+    up.d.getElementById("ls-s-input").value = "x";
+    up.d.getElementById("ls-s-form").requestSubmit();
+    up.a.querySelector('[data-act="quit"]').click();
+    const saved = JSON.parse(u.data.get("ielts-dictation-v1@alice"));
+    eq("an answer saves under the user's key", Object.keys(saved.w).length, 1);
+
+    /* another tab */
+    let n = stores(u.log).length;
+    u.win.dispatchEvent(new u.win.StorageEvent("storage", { key: "ielts-dictation-v1" }));
+    eq("another profile's change in another tab is ignored", stores(u.log).length, n);
+    u.win.dispatchEvent(new u.win.StorageEvent("storage", { key: "ielts-dictation-v1@alice" }));
+    eq("the user's own change in another tab is picked up", stores(u.log).slice(n), ["get ielts-dictation-v1@alice"]);
+
+    /* export and import act on the current profile; the download is refused so the text appears on the page instead */
+    u.win.URL.createObjectURL = () => { throw new Error("no download from a test"); };
+    up.a.querySelector('[data-act="export"]').click();
+    eq("export is the user's state", JSON.parse(up.d.getElementById("ls-export-text").value).state.start, saved.start);
+    const dt = new u.win.DataTransfer();
+    dt.items.add(new u.win.File([guestState], "p.json", { type: "application/json" }));
+    const file = up.d.getElementById("ls-import-file");
+    file.files = dt.files;
+    file.dispatchEvent(new u.win.Event("change", { bubbles: true }));
+    await waitFor(() => up.a.querySelector('[data-act="import-confirm"]'));
+    up.a.querySelector('[data-act="import-confirm"]').click();
+    up.a.querySelector('[data-act="import-confirm"]').click();
+    eq("import lands in the user's key", [JSON.parse(u.data.get("ielts-dictation-v1@alice")).start, up.App.summary().mastered], ["2026-11-01", 1]);
+    eq("import leaves the guest's store alone", u.data.get("ielts-dictation-v1"), guestState);
+
+    /* the summary module, and what counts as a draft */
+    n = stores(u.log).length;
+    up.Sum.mount(up.b, up.App, alice);
+    eq("summary reads only the user's keys", stores(u.log).slice(n), ["get wliu-listen-summary-v1@alice", "get wliu-listen-summary-v1-recovery@alice"]);
+    const field = (id) => up.d.getElementById(id);
+    eq("draft none at first", up.Sum.hasDraft(), false);
+    ["sm-url", "sm-start", "sm-end", "sm-v-summary", "sm-v-missed", "sm-v-title"].forEach((id) => {
+      field(id).value = "x";
+      eq("draft typed in " + id, up.Sum.hasDraft(), true);
+      field(id).value = "  ";
+      eq("draft spaces in " + id, up.Sum.hasDraft(), false);
+      field(id).value = "";
+    });
+    field("sm-url").value = "https://www.youtube.com/watch?v=" + ID;
+    field("sm-start").value = "0:10";
+    field("sm-end").value = "0:20";
+    field("sm-v-summary").value = "大意";
+    eq("draft before saving", up.Sum.hasDraft(), true);
+    up.b.querySelector('[data-act="save-clip"]').click();
+    eq("clip saves under the user's key", JSON.parse(u.data.get("wliu-listen-summary-v1@alice")).clips.length, 1);
+    eq("clip leaves the guest's store alone", u.data.get("wliu-listen-summary-v1"), guestSum);
+    eq("draft nothing new after saving", up.Sum.hasDraft(), false);
+    field("sm-v-missed").value = "x";
+    eq("draft new text after saving", up.Sum.hasDraft(), true);
+    up.b.querySelector('[data-act="clip-use"]').click();
+    eq("draft nothing new after loading a clip", up.Sum.hasDraft(), false);
+    n = stores(u.log).length;
+    u.win.dispatchEvent(new u.win.StorageEvent("storage", { key: "wliu-listen-summary-v1" }));
+    eq("summary ignores another profile's change", stores(u.log).length, n);
+    u.win.dispatchEvent(new u.win.StorageEvent("storage", { key: "wliu-listen-summary-v1@alice" }));
+    eq("summary picks up the user's own change", stores(u.log).slice(n)[0], "get wliu-listen-summary-v1@alice");
+    u.frame.remove();
+
+    /* a damaged store is copied aside under the same profile */
+    const d = await sandbox({ local: { "wliu-listen-summary-v1@alice": "{broken" } }, SCRIPTS), dp = place(d);
+    dp.App.mount(dp.a, alice);
+    dp.Sum.mount(dp.b, dp.App, alice);
+    eq("recovery copy is the user's", [d.data.get("wliu-listen-summary-v1-recovery@alice"), d.data.has("wliu-listen-summary-v1-recovery")], ["{broken", false]);
+    d.frame.remove();
+
+    /* with storage blocked practice still starts, and says it cannot save */
+    const b = await sandbox({ blocked: true }, SCRIPTS), bp = place(b);
+    bp.App.mount(bp.a, alice);
+    bp.Sum.mount(bp.b, bp.App, alice);
+    eq("storage blocked still mounts", [bp.App.summary().mastered, bp.d.getElementById("ls-title") !== null, bp.d.getElementById("sm-title") !== null], [0, true, true]);
+    eq("storage blocked warns", bp.d.getElementById("ls-save-warn").hidden, false);
+    b.frame.remove();
+  }
+
+  function report(final) {
+    const sum = document.getElementById("sum");
+    sum.textContent = (fail ? "FAILED " : final ? "PASSED " : "RUNNING ") + pass + " passed, " + fail + " failed";
+    sum.className = fail ? "f" : "p";
+    document.getElementById("out").textContent = lines.join("\n");
+  }
+  report(false);
+  (async () => {
+    for (const step of [profileStoreTests, moduleTests]) {
+      try { await step(); } catch (e) { eq(step.name + " ran to the end", String(e), "no error"); }
+      report(false);
+    }
+    report(true);
+  })();
 })();
 </script>
 </body>

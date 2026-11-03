@@ -1,4 +1,4 @@
-/* Site shell: theme, entry screen, listening wave, clock and the progress panel.
+/* Site shell: login, user switch, theme, listening wave, clock and the progress panel.
    Nothing here touches the listening logic; it only mounts the app, listens to its events and shows what it reports. */
 (function () {
   "use strict";
@@ -39,17 +39,24 @@
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   const pad2 = (n) => String(n).padStart(2, "0");
   const token = (name) => getComputedStyle(html).getPropertyValue(name).trim();
-  const App = window.WLIU_LISTENING, Sum = window.WLIU_SUMMARY;
+  const Profile = window.WLIU_PROFILE, App = window.WLIU_LISTENING, Sum = window.WLIU_SUMMARY;
   /* Which section of the main window is showing, and whether each one is mid-practice. */
   let tab = "dictation", dictView = "home", sumView = "home";
+  /* started: the app is mounted for a profile. gateDone: the room is open. */
+  let started = false, gateDone = false;
 
-  /* The app did not load or start: drop the entry screen, whose button could do nothing, and say so. */
+  /* The app did not load or start: drop the entry screen, whose login could do nothing, and say so. */
   function appFailed() {
+    gateDone = true;
+    /* When the scripts did not load nothing is wired yet, so the switch would do nothing. */
+    if (!started) document.querySelector(".wl-bar-who").hidden = true;
     html.classList.remove("wl-entry-open");
     $("wl-entry").hidden = true;
+    $("wl-room").removeAttribute("inert");
+    $("wl-room").removeAttribute("aria-hidden");
     $("wl-listen").innerHTML = '<p class="wl-noscript" role="alert">听写内容没有加载成功，请刷新页面再试一次。</p>';
   }
-  if (!App) { appFailed(); return; }
+  if (!App || !Profile) { appFailed(); return; }
 
   /* ---------- clock ---------- */
   let shownMinute = "", shownDay = "";
@@ -83,6 +90,21 @@
     html.setAttribute("data-theme", b.dataset.themeSet);
     try { localStorage.setItem(THEME_KEY, b.dataset.themeSet); } catch (err) { /* theme lasts for this page only */ }
     paintThemeButtons();
+  });
+
+  /* ---------- user switch: it reloads the page, so the stylesheet hides it during a round ---------- */
+  /* A reload loses what is typed in the video form, so with text there the first press only says so and the second goes ahead. */
+  let armedSwitch = false, armedTimer = 0;
+  function disarmSwitch() { clearTimeout(armedTimer); armedSwitch = false; $("wl-bar-msg").textContent = ""; }
+  $("wl-switch-user").addEventListener("click", () => {
+    if (Sum && Sum.hasDraft() && !armedSwitch) {
+      armedSwitch = true;
+      $("wl-bar-msg").textContent = "视频表单里还有没保存的文字，切换用户后会丢失。要继续，请再按一次。";
+      armedTimer = setTimeout(disarmSwitch, 5000);
+      return;
+    }
+    try { sessionStorage.removeItem(ENTERED_KEY); } catch (e) { /* nothing was kept, so the login page shows anyway */ }
+    location.reload();
   });
 
   /* ---------- listening wave: flat unless a word is actually being spoken ---------- */
@@ -122,16 +144,16 @@
     if (!scopeRaf) scopeRaf = requestAnimationFrame(scopeLoop);
   }
 
-  /* ---------- entry screen: standby, loading, room ---------- */
-  const gate = $("wl-entry"), room = $("wl-room"), status = $("wl-entry-status");
+  /* ---------- entry screen: login, loading, room ---------- */
+  const gate = $("wl-entry"), room = $("wl-room"), status = $("wl-entry-status"), nameInput = $("wl-login-name"), loginError = $("wl-login-error");
   const LOAD_MS = 1500;
-  let gateDone = false, loadTimers = [];
+  let loadTimers = [];
   function loadedLine() {
     const s = App.summary();
     return "已掌握 " + s.mastered + " / " + s.expMax + " 词 · 等级 " + s.rank.rank;
   }
   function skipLoading(e) {
-    if (e.type === "keydown" && (e.key === "Tab" || e.key === "Shift")) return;
+    if (e.type === "keydown" && (e.repeat || e.key === "Tab" || e.key === "Shift")) return;
     if (e.type === "keydown") e.preventDefault();
     finishGate();
   }
@@ -149,6 +171,20 @@
     loadTimers.push(setTimeout(() => { status.textContent = loadedLine(); }, LOAD_MS * 0.6));
     loadTimers.push(setTimeout(finishGate, LOAD_MS));
   }
+  /* The loader owns this step and calls back. If it is missing or fails, the plain bar still gets the visitor in. */
+  function runLoading() {
+    const loader = window.WLIU_LOADER;
+    if (!loader) { startLoading(); return; }
+    gate.dataset.stage = "loader";
+    try {
+      loader.play({ reveal: finishGate, done: loaderGone });
+    } catch (e) { if (!gateDone) startLoading(); }
+  }
+  function loaderGone() {
+    finishGate();
+    if (!document.activeElement || document.activeElement === body) focusRoom();
+  }
+  function focusRoom() { if (tab === "summary") Sum.focusCurrent(); else App.focusCurrent(); }
   function finishGate() {
     if (gateDone) return;
     gateDone = true;
@@ -165,14 +201,42 @@
     setTimeout(() => { room.classList.remove("is-entering"); }, 1100);
     drawScope(0);
     window.scrollTo(0, 0);
-    if (tab === "summary") Sum.focusCurrent(); else App.focusCurrent();
+    focusRoom();
   }
-  function initGate() {
-    if (html.classList.contains("wl-entered")) { gateDone = true; gate.hidden = true; return; }
+
+  /* ---------- login: nothing is mounted until a profile is chosen. This page is the one place written in both languages. ---------- */
+  const LOGIN_ERRORS = {
+    empty: "请先输入用户名，或者用访客登录。 Enter a username, or continue as guest.",
+    long: "用户名最多 20 个字符。 Usernames can be up to 20 characters.",
+    chars: "用户名里有看不见的字符、控制字符或组合表情，请重新输入。 This name has hidden or control characters, or a combined emoji. Please type it again."
+  };
+  function showLoginError(text) {
+    loginError.textContent = text;
+    loginError.hidden = !text;
+    if (text) nameInput.setAttribute("aria-invalid", "true"); else nameInput.removeAttribute("aria-invalid");
+  }
+  /* Fine pointers only: on a touch screen this would bring the keyboard up over the page. */
+  function focusName() {
+    if (window.matchMedia("(pointer: fine)").matches) { nameInput.focus({ preventScroll: true }); nameInput.select(); }
+  }
+  function enter(profile) {
+    Profile.save(profile);
+    if (start(profile)) runLoading();
+  }
+  function showLogin() {
     room.setAttribute("inert", "");
     room.setAttribute("aria-hidden", "true");
-    $("wl-start").addEventListener("click", startLoading);
-    $("wl-start").focus({ preventScroll: true });
+    nameInput.value = Profile.lastName();
+    if (window.WLIU_LOADER) { try { window.WLIU_LOADER.prepare(); } catch (e) { /* it gets another chance at play */ } }
+    nameInput.addEventListener("input", () => showLoginError(""));
+    $("wl-guest").addEventListener("click", () => enter({ kind: "guest" }));
+    $("wl-login").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const n = Profile.normalize(nameInput.value);
+      if (!n.ok) { showLoginError(LOGIN_ERRORS[n.code]); focusName(); return; }
+      enter({ kind: "user", name: n.name, id: n.id });
+    });
+    focusName();
   }
 
   /* ---------- progress panel: only what the app actually knows ---------- */
@@ -199,14 +263,10 @@
   /* ---------- wiring ---------- */
   function paintSession() {
     body.classList.toggle("wl-session", (tab === "summary" ? sumView : dictView) === "session");
+    /* A round left running under the other tab would be lost to a reload just the same. */
+    body.classList.toggle("wl-round", dictView === "session" || sumView === "session");
     drawScope(0);
   }
-  App.on("view", (v) => { dictView = v; paintSession(); });
-  App.on("speech", onSpeech);
-  App.on("change", readouts);
-  try { App.mount($("wl-listen")); } catch (e) { appFailed(); return; }
-
-  /* 听句概括 sits beside the dictation. If it fails to start, the dictation carries on without the switch. */
   function setTab(next) {
     if (next === tab) return;
     if (tab === "summary") Sum.hush(); else App.hush();
@@ -217,21 +277,42 @@
     paintSession();
     try { history.replaceState(null, "", next === "summary" ? "#summary" : location.pathname + location.search); } catch (e) { /* the section just is not remembered across a reload */ }
   }
-  if (Sum) {
-    try {
-      Sum.on("view", (v) => { sumView = v; paintSession(); });
-      Sum.on("speech", onSpeech);
-      Sum.mount($("wl-summary"), App);
-      $("wl-tabs").hidden = false;
-      $("wl-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
-      if (location.hash === "#summary") setTab("summary");
-      /* Only these two hashes pick a section; #wl-about-title and the like leave it alone. */
-      window.addEventListener("hashchange", () => {
-        const was = tab;
-        if (location.hash === "#summary") setTab("summary"); else if (!location.hash) setTab("dictation");
-        if (gateDone && tab !== was) { if (tab === "summary") Sum.focusCurrent(); else App.focusCurrent(); }
-      });
-    } catch (e) { $("wl-tabs").hidden = true; $("wl-summary").hidden = true; }
+  /* Mounts everything for one profile, once per page. Returns false when the app could not start. */
+  function start(profile) {
+    if (started) return false;
+    started = true;
+    App.on("view", (v) => { dictView = v; paintSession(); });
+    App.on("speech", onSpeech);
+    App.on("change", readouts);
+    try { App.mount($("wl-listen"), profile); } catch (e) { appFailed(); return false; }
+
+    /* 听句概括 sits beside the dictation. If it fails to start, the dictation carries on without the switch. */
+    if (Sum) {
+      try {
+        Sum.on("view", (v) => { sumView = v; paintSession(); });
+        Sum.on("speech", onSpeech);
+        Sum.mount($("wl-summary"), App, profile);
+        $("wl-tabs").hidden = false;
+        $("wl-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
+        if (location.hash === "#summary") setTab("summary");
+        /* Only these two hashes pick a section; #wl-about-title and the like leave it alone. */
+        window.addEventListener("hashchange", () => {
+          const was = tab;
+          if (location.hash === "#summary") setTab("summary"); else if (!location.hash) setTab("dictation");
+          if (gateDone && tab !== was) focusRoom();
+        });
+      } catch (e) { $("wl-tabs").hidden = true; $("wl-summary").hidden = true; }
+    }
+
+    const who = $("wl-user-name");
+    who.textContent = profile.kind === "user" ? profile.name : "访客";
+    who.title = who.textContent;
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) { paintClock(new Date()); readouts(); }
+    });
+    tickClock();
+    readouts();
+    return true;
   }
 
   if (SITE.bio) { const bio = $("wl-bio"); bio.textContent = SITE.bio; bio.hidden = false; }
@@ -241,12 +322,15 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => { drawScope(0); }, 120);
   });
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { paintClock(new Date()); readouts(); }
-  });
 
-  tickClock();
   paintThemeButtons();
-  readouts();
-  initGate();
+
+  /* The same condition the script in the head used to pick the first paint. */
+  let entered = false;
+  try { entered = sessionStorage.getItem(ENTERED_KEY) === "1"; } catch (e) { /* the login shows */ }
+  const returning = entered ? Profile.read() : null;
+  html.classList.toggle("wl-entered", !!returning);
+  html.classList.toggle("wl-entry-open", !returning);
+  if (!returning) showLogin();
+  else if (start(returning)) { gateDone = true; gate.hidden = true; }
 })();
