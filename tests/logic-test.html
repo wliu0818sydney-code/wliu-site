@@ -1610,8 +1610,9 @@ window.addEventListener("error", function (e) {
     if (location.protocol === "file:") return;
     const page = new DOMParser().parseFromString(await (await fetch("../index.html", { cache: "no-store" })).text(), "text/html");
     eq("shell only a script that can run the article tab reveals it", page.querySelector('#wl-tabs [data-tab="article"]').hidden, true);
-    page.querySelectorAll("script").forEach((x) => x.remove());
-    const BASE = ["../js/profile.js", "../listening/data.js", "../listening/core.js", "../listening/listening.js", "../listening/summary-data.js", "../listening/summary-core.js", "../listening/summary.js"];
+    /* The images too: their paths are relative to the site's root, not to this folder. */
+    page.querySelectorAll("script, img").forEach((x) => x.remove());
+    const BASE =["../js/profile.js", "../listening/data.js", "../listening/core.js", "../listening/listening.js", "../listening/summary-data.js", "../listening/summary-core.js", "../listening/summary.js"];
     const ARTICLE = ["../listening/article-data.js", "../listening/article-core.js", "../listening/article.js"];
     const guest = async (body, scripts, local) => {
       const fill = "data:text/javascript," + encodeURIComponent("document.body.innerHTML=" + JSON.stringify(body));
