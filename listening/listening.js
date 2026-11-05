@@ -65,7 +65,7 @@
   const { status, daysOf, learned, doneToday, dayNo, wrongItems, allWrong, firstReview, plan, taskItems } = M;
 
   /* ---------- outward events for the site shell ---------- */
-  const handlers = { view: [], speech: [], change: [] };
+  const handlers = { view: [], speech: [], change: [], tts: [] };
   function emit(name, value) { handlers[name].forEach((fn) => { try { fn(value); } catch (e) { /* a shell bug must not stop practice */ } }); }
   function on(name, fn) { if (handlers[name]) handlers[name].push(fn); }
 
@@ -80,9 +80,9 @@
   const langOf = (v) => String(v.lang || "").replace("_", "-").toLowerCase();
   let speaking = false, speakGuard = 0, startGuard = 0, goTimer = 0, appRoot = null;
   /* Reflects real utterance start and end events. Browsers expose no audio samples for speech. */
-  function setSpeaking(v) {
+  function setSpeaking(v, hold) {
     clearTimeout(speakGuard);
-    if (v) speakGuard = setTimeout(() => setSpeaking(false), 6000);
+    if (v) speakGuard = setTimeout(() => setSpeaking(false), hold || 6000);
     if (speaking === v) return;
     speaking = v;
     if (appRoot) appRoot.classList.toggle("is-speaking", v);
@@ -99,24 +99,29 @@
     const voice = pool.find((v) => /enhanced|premium|natural|neural/i.test(v.name)) || pool.find((v) => v.localService) || pool[0] || null;
     return { voice, exact: same.length > 0 };
   }
-  function speak(text, rate) {
-    if (!tts.ok) return;
+  /* done, when given, hears whether the text reached its end. It is not told about an utterance cut off by a newer one or by hush(). */
+  function speak(text, rate, done) {
+    if (!tts.ok) { if (done) done(false); return; }
     const synth = window.speechSynthesis;
     clearTimeout(startGuard);
+    const report = (ok) => { if (done) done(ok); };
     const go = () => {
       try {
         const u = new SpeechSynthesisUtterance(text);
         const p = pickVoice();
         if (p.voice) { u.voice = p.voice; u.lang = p.voice.lang; } else { u.lang = prefs.accent; }
         u.rate = rate;
-        u.onstart = () => { clearTimeout(guard); setSpeaking(true); if (tts.failed) { tts.failed = false; repaintSpeech(); } };
-        u.onend = () => { clearTimeout(guard); setSpeaking(false); };
+        /* A word is over in moments. A sentence keeps the speaking state for as long as it can plausibly take. */
+        const words = String(text).split(/\s+/).length, hold = words > 4 ? (10 + (words * 0.7) / rate) * 1000 : 0;
+        u.onstart = () => { clearTimeout(guard); setSpeaking(true, hold); if (tts.failed) { tts.failed = false; repaintSpeech(); } };
+        u.onend = () => { clearTimeout(guard); setSpeaking(false); report(true); };
         u.onerror = (e) => {
           clearTimeout(guard);
           setSpeaking(false);
           if (e && (e.error === "interrupted" || e.error === "canceled")) return;
           tts.failed = true;
           repaintSpeech();
+          report(false);
         };
         /* No start event means no sound was produced, and a network voice that cannot connect may never report an error. */
         const guard = startGuard = setTimeout(() => {
@@ -124,9 +129,10 @@
           setSpeaking(false);
           tts.failed = true;
           repaintSpeech();
+          report(false);
         }, 8000);
         synth.speak(u);
-      } catch (e) { clearTimeout(startGuard); tts.failed = true; repaintSpeech(); }
+      } catch (e) { clearTimeout(startGuard); tts.failed = true; repaintSpeech(); report(false); }
     };
     /* Cancel then wait: some engines drop an utterance queued in the same tick as a cancel. */
     const waiting = goTimer;
@@ -134,14 +140,27 @@
     goTimer = 0;
     try { if (waiting || synth.speaking || synth.pending) { synth.cancel(); goTimer = setTimeout(() => { goTimer = 0; go(); }, 60); } else go(); } catch (e) { go(); }
   }
-  function repaintSpeech() { if (view === "session" && sess) { paintSession(); keepForm(); } else if (view === "home") renderHome(); }
-  function hush() { clearTimeout(startGuard); clearTimeout(goTimer); goTimer = 0; try { if (tts.ok) window.speechSynthesis.cancel(); } catch (e) { /* nothing to stop */ } setSpeaking(false); }
+  function repaintSpeech() { if (view === "session" && sess) { paintSession(); keepForm(); } else if (view === "home") renderHome(); emit("tts", tts.failed); }
+  /* Only what is playing gets cancelled: an idle engine stays ready to speak inside the same press, which phones require. After a real cancel the timer makes the next speak() wait too, for the engines that drop an utterance queued in the same tick. */
+  function hush() {
+    clearTimeout(startGuard);
+    const waiting = goTimer;
+    clearTimeout(goTimer);
+    goTimer = 0;
+    try {
+      const synth = window.speechSynthesis;
+      if (tts.ok && (waiting || speaking || synth.speaking || synth.pending)) { synth.cancel(); goTimer = setTimeout(() => { goTimer = 0; }, 60); }
+    } catch (e) { /* nothing to stop */ }
+    setSpeaking(false);
+  }
 
   /* ---------- view state: kept in variables because home re-renders replace its DOM ---------- */
   let view = "home", sess = null, picked = 0, armReset = false, armTimer = 0, wrongOpen = false, renderedDay = "";
   let ioMsg = "", ioBad = false, exportText = "", exportOffer = false, startMsg = "";
   let homeStale = false, rendering = false, pointerDown = false, renderAfterPointer = false, pointerTimer = 0;
   let pendingImport = null, armImport = false, armImportTimer = 0;
+  /* Another section's progress that travels with the export, import and clear here. It keeps its own storage and its own checks. */
+  let shared = null;
   const wide = window.matchMedia ? window.matchMedia("(min-width: 760px)") : { matches: false };
   const lhtml = (k) => '<span class="ls-lno">L' + k + "</span>" + esc(topic(k));
 
@@ -252,7 +271,7 @@
       const st = pendingImport.state;
       const learnedN = LISTS.filter((_, i) => (st.l[i + 1] || []).length > 0).length;
       const wrongN = ITEMS.filter((it) => st.w[it.id] && st.w[it.id][0] === 0).length;
-      h += '<div class="ls-confirm" role="group" aria-label="确认导入"><div id="ls-confirm-text">这个文件里：开始日期 ' + (st.start ? fmtDate(st.start) : "未设置") + "，已学 " + learnedN + " 组，待攻克 " + wrongN + " 个。</div>" +
+      h += '<div class="ls-confirm" role="group" aria-label="确认导入"><div id="ls-confirm-text">这个文件里：开始日期 ' + (st.start ? fmtDate(st.start) : "未设置") + "，已学 " + learnedN + " 组，待攻克 " + wrongN + " 个。" + (shared ? shared.describe(pendingImport.articles) : "") + "</div>" +
         '<div class="ls-row"><button type="button" class="ls-btn ls-quiet' + (armImport ? " ls-danger" : "") + '" data-act="import-confirm" aria-describedby="ls-confirm-text">' + (armImport ? "再点一次，覆盖当前进度" : "覆盖当前进度") + "</button>" +
         '<button type="button" class="ls-link" data-act="import-cancel">取消</button></div></div>';
     }
@@ -262,7 +281,7 @@
     let h = '<section class="ls-card ls-pad ls-stack" aria-label="设置"><h2 class="ls-mark">设置</h2>';
     h += '<div class="ls-row"><label for="ls-start-date">开始日期（第 1 天）</label><input type="date" id="ls-start-date" value="' + (S.start || today()) + '"></div>';
     if (startMsg) h += '<div class="ls-warnbox">' + esc(startMsg) + "</div>";
-    h += '<div class="ls-note">' + STORAGE_NOTE + "</div>";
+    h += '<div class="ls-note">' + STORAGE_NOTE + (shared ? shared.note : "") + "</div>";
     h += transferBlock();
     h += '<div class="ls-row"><button type="button" class="ls-btn ls-quiet' + (armReset ? " ls-danger" : "") + '" data-act="reset">' + (armReset ? "再点一次，清空全部进度" : "清空进度") + "</button></div>";
     return h + "</section>";
@@ -501,7 +520,7 @@
   function refreshDay() { if (view === "home" && today() !== renderedDay) renderHome(); }
 
   /* ---------- export and import ---------- */
-  function exportJSON() { return JSON.stringify({ app: "ielts-dictation", exportedAt: new Date().toISOString(), state: S, prefs }, null, 2); }
+  function exportJSON() { return JSON.stringify({ app: "ielts-dictation", exportedAt: new Date().toISOString(), state: S, prefs, articles: shared ? shared.read() : undefined }, null, 2); }
   function doExport() {
     const name = "ielts-progress-" + today() + ".json", text = exportJSON();
     exportText = ""; ioBad = false;
@@ -539,6 +558,8 @@
     S = pendingImport.state; /* replaces, never merges; keeps the imported timestamp */
     if (pendingImport.prefs) { prefs.mode = pendingImport.prefs.mode; prefs.accent = pendingImport.prefs.accent; savePrefs(); }
     saveLocal();
+    /* An older file has no articles part, and that says nothing about them, so they stay as they are. */
+    if (shared && pendingImport.articles !== undefined) shared.restore(pendingImport.articles);
     pendingImport = null; disarmImport(); picked = 0;
     ioMsg = "已导入。"; ioBad = false; exportText = ""; exportOffer = false; startMsg = "";
     say(ioMsg);
@@ -590,7 +611,7 @@
     else if (act === "reset") {
       clearTimeout(armTimer);
       if (!armReset) { armReset = true; armTimer = setTimeout(() => { armReset = false; if (view === "home") renderHome(); }, 5000); }
-      else { armReset = false; S = blank(); picked = 0; touch(); }
+      else { armReset = false; S = blank(); picked = 0; touch(); if (shared) shared.clear(); }
       renderHome();
     }
     else if (act === "export") doExport();
@@ -700,8 +721,15 @@
     show("home");
   }
 
-  /* Read-only: lets 听句概括 use the same voice and accent choice. */
-  function voiceInfo() { loadVoices(); const p = pickVoice(); return { voice: p.voice, exact: p.exact, accent: prefs.accent }; }
+  /* Read-only: lets the other sections use the same voice and accent choice, and see whether this device can speak. */
+  function voiceInfo() { loadVoices(); const p = pickVoice(); return { voice: p.voice, exact: p.exact, accent: prefs.accent, ok: tts.ok, failed: tts.failed, mode: mode() }; }
+  /* The same choice as the buttons in 听写方式, for a section that finds it cannot speak. */
+  function setMode(v) {
+    if (v !== "audio" && v !== "zh") return;
+    prefs.mode = v; savePrefs();
+    if (view === "home") renderHome(); else emit("change");
+  }
+  function shareProgress(part) { shared = part; if (view === "home") renderHome(); }
 
-  root.WLIU_LISTENING = { mount, on, summary, hush, focusCurrent, refreshDay, voiceInfo, inSession: () => view === "session" };
+  root.WLIU_LISTENING = { mount, on, summary, hush, focusCurrent, refreshDay, voiceInfo, speak, setMode, shareProgress, inSession: () => view === "session" };
 })(window);

@@ -29,6 +29,7 @@
 <link rel="stylesheet" href="css/site.css">
 <link rel="stylesheet" href="listening/listening.css">
 <link rel="stylesheet" href="listening/summary.css">
+<link rel="stylesheet" href="listening/article.css">
 <link rel="stylesheet" href="css/loader.css">
 <noscript><style>.wl-entry, .wl-bar-who { display: none; }</style></noscript>
 </head>
@@ -191,9 +192,11 @@
         <div class="wl-tabs" id="wl-tabs" role="group" aria-label="练习内容" hidden>
           <button type="button" data-tab="dictation" aria-pressed="true">每日听写</button>
           <button type="button" data-tab="summary" aria-pressed="false">听句概括</button>
+          <button type="button" data-tab="article" aria-pressed="false" hidden>文章精读</button>
         </div>
         <div id="wl-listen"></div>
         <div id="wl-summary" hidden></div>
+        <div id="wl-article" hidden></div>
       </main>
 
       <section class="wl-about hud wl-rise-4" id="wl-about" aria-labelledby="wl-about-title">
@@ -221,6 +224,9 @@
 <script src="listening/summary-data.js"></script>
 <script src="listening/summary-core.js"></script>
 <script src="listening/summary.js"></script>
+<script src="listening/article-data.js"></script>
+<script src="listening/article-core.js"></script>
+<script src="listening/article.js"></script>
 <script src="js/loader.js"></script>
 <script src="js/site.js" onerror="wlShellFailed()"></script>
 </body>

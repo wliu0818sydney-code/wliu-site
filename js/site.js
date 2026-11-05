@@ -39,9 +39,12 @@
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   const pad2 = (n) => String(n).padStart(2, "0");
   const token = (name) => getComputedStyle(html).getPropertyValue(name).trim();
-  const Profile = window.WLIU_PROFILE, App = window.WLIU_LISTENING, Sum = window.WLIU_SUMMARY;
+  const Profile = window.WLIU_PROFILE, App = window.WLIU_LISTENING, Sum = window.WLIU_SUMMARY, Art = window.WLIU_ARTICLE;
   /* Which section of the main window is showing, and whether each one is mid-practice. */
-  let tab = "dictation", dictView = "home", sumView = "home";
+  let tab = "dictation";
+  /* A page cached from before this section existed has neither of these, and its login and other sections must still work. */
+  const artPanel = $("wl-article"), artTab = document.querySelector('#wl-tabs [data-tab="article"]');
+  const views = { dictation: "home", summary: "home", article: "home" };
   /* started: the app is mounted for a profile. gateDone: the room is open. */
   let started = false, gateDone = false;
 
@@ -184,7 +187,7 @@
     finishGate();
     if (!document.activeElement || document.activeElement === body) focusRoom();
   }
-  function focusRoom() { if (tab === "summary") Sum.focusCurrent(); else App.focusCurrent(); }
+  function focusRoom() { if (tab === "summary") Sum.focusCurrent(); else if (tab === "article") Art.focusCurrent(); else App.focusCurrent(); }
   function finishGate() {
     if (gateDone) return;
     gateDone = true;
@@ -262,46 +265,67 @@
 
   /* ---------- wiring ---------- */
   function paintSession() {
-    body.classList.toggle("wl-session", (tab === "summary" ? sumView : dictView) === "session");
-    /* A round left running under the other tab would be lost to a reload just the same. */
-    body.classList.toggle("wl-round", dictView === "session" || sumView === "session");
+    body.classList.toggle("wl-session", views[tab] === "session");
+    /* A round left running under another tab would be lost to a reload just the same. */
+    body.classList.toggle("wl-round", Object.keys(views).some((k) => views[k] === "session"));
     drawScope(0);
   }
-  function setTab(next) {
+  /* pressed: a real press, which is what lets speech start by itself. */
+  function setTab(next, pressed) {
     if (next === tab) return;
-    if (tab === "summary") Sum.hush(); else App.hush();
+    if (tab === "summary") Sum.hush(); else if (tab === "article") Art.hush(); else App.hush();
     tab = next;
     $("wl-listen").hidden = next !== "dictation";
     $("wl-summary").hidden = next !== "summary";
+    if (artPanel) artPanel.hidden = next !== "article";
     document.querySelectorAll("#wl-tabs [data-tab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === next)));
     paintSession();
-    try { history.replaceState(null, "", next === "summary" ? "#summary" : location.pathname + location.search); } catch (e) { /* the section just is not remembered across a reload */ }
+    try { history.replaceState(null, "", next === "dictation" ? location.pathname + location.search : "#" + next); } catch (e) { /* the section just is not remembered across a reload */ }
+    if (next === "article") Art.resume(pressed);
   }
   /* Mounts everything for one profile, once per page. Returns false when the app could not start. */
   function start(profile) {
     if (started) return false;
     started = true;
-    App.on("view", (v) => { dictView = v; paintSession(); });
+    App.on("view", (v) => { views.dictation = v; paintSession(); });
     App.on("speech", onSpeech);
     App.on("change", readouts);
     try { App.mount($("wl-listen"), profile); } catch (e) { appFailed(); return false; }
 
-    /* 听句概括 sits beside the dictation. If it fails to start, the dictation carries on without the switch. */
+    /* 听句概括 and 文章精读 sit beside the dictation. If one fails to start, the others carry on without its button. */
+    const ready = { summary: false, article: false };
     if (Sum) {
       try {
-        Sum.on("view", (v) => { sumView = v; paintSession(); });
+        Sum.on("view", (v) => { views.summary = v; paintSession(); });
         Sum.on("speech", onSpeech);
         Sum.mount($("wl-summary"), App, profile);
-        $("wl-tabs").hidden = false;
-        $("wl-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
-        if (location.hash === "#summary") setTab("summary");
-        /* Only these two hashes pick a section; #wl-about-title and the like leave it alone. */
-        window.addEventListener("hashchange", () => {
-          const was = tab;
-          if (location.hash === "#summary") setTab("summary"); else if (!location.hash) setTab("dictation");
-          if (gateDone && tab !== was) focusRoom();
-        });
-      } catch (e) { $("wl-tabs").hidden = true; $("wl-summary").hidden = true; }
+        ready.summary = true;
+      } catch (e) { $("wl-summary").hidden = true; }
+    }
+    if (Art && artPanel) {
+      try {
+        Art.on("view", (v) => { views.article = v; paintSession(); });
+        Art.mount(artPanel, App, profile);
+        ready.article = true;
+      } catch (e) { artPanel.hidden = true; }
+    }
+    document.querySelector('#wl-tabs [data-tab="summary"]').hidden = !ready.summary;
+    if (artTab) artTab.hidden = !ready.article;
+    if (ready.summary || ready.article) {
+      /* Only these hashes pick a section; #wl-about-title and the like leave it alone. */
+      const pickFromHash = () => {
+        if (location.hash === "#summary" && ready.summary) setTab("summary");
+        else if (location.hash === "#article" && ready.article) setTab("article");
+        else if (!location.hash) setTab("dictation");
+      };
+      $("wl-tabs").hidden = false;
+      $("wl-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab, true); });
+      pickFromHash();
+      window.addEventListener("hashchange", () => {
+        const was = tab;
+        pickFromHash();
+        if (gateDone && tab !== was) focusRoom();
+      });
     }
 
     const who = $("wl-user-name");

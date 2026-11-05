@@ -25,6 +25,7 @@ CLAUDE.md
 # Personal study records exported from the site
 ielts-progress-*.json
 listen-summary-*.json
+article-recovery-*.json
 
 # Scratch and archives
 *.bak

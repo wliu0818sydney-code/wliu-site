@@ -129,7 +129,8 @@
     if (o.app !== undefined) {
       if (o.app !== "ielts-dictation") return null;
       const st = sane(o.state, true);
-      return st ? { state: st, prefs: o.prefs ? sanePrefs(o.prefs) : null } : null;
+      /* articles belongs to 文章精读, which checks it itself. An older file simply does not have it. */
+      return st ? { state: st, prefs: o.prefs ? sanePrefs(o.prefs) : null, articles: o.articles } : null;
     }
     const st = sane(o, true);
     return st ? { state: st, prefs: null } : null;

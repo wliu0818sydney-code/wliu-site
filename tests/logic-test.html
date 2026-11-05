@@ -10,11 +10,22 @@
 <body>
 <h1 id="sum">running</h1>
 <pre id="out"></pre>
+<script>
+/* A script that cannot run, such as article data with a missing comma, would otherwise leave this page saying "running" for ever. */
+window.addEventListener("error", function (e) {
+  var sum = document.getElementById("sum"), out = document.getElementById("out");
+  sum.textContent = "FAILED a script did not run";
+  sum.className = "f";
+  out.textContent += "FAIL " + e.message + " (" + String(e.filename).split("/").pop() + " line " + e.lineno + ")\n";
+});
+</script>
 <script src="../js/profile.js"></script>
 <script src="../listening/data.js"></script>
 <script src="../listening/core.js"></script>
 <script src="../listening/summary-data.js"></script>
 <script src="../listening/summary-core.js"></script>
+<script src="../listening/article-data.js"></script>
+<script src="../listening/article-core.js"></script>
 <script>
 (function () {
   "use strict";
@@ -487,6 +498,300 @@
   eq("key every store apart", new Set([C.KEY, C.PKEY, Y.KEY, Y.RECOVERY_KEY].map((b) => P.keyFor(b, user("a")))).size, 4);
   eq("key no name reaches another store", P.keyFor(Y.KEY, user("a-recovery")) !== P.keyFor(Y.RECOVERY_KEY, user("a")), true);
 
+  /* ---------- 文章精读 ---------- */
+  const A = window.WLIU_ARTICLE_CORE;
+  {
+    const IPAT = A.BY_ID.get("ipat"), DEMO = A.BY_ID.get("demographic-transition");
+    const copy = (o) => JSON.parse(JSON.stringify(o));
+    const wordOf = (a, en) => A.findWord(a, en), clozeOf = (a, word) => a.cloze.find((c) => c.word === word);
+
+    /* the data contract, which also checks any article added later */
+    eq("art data passes its contract", A.checkArticles(window.WLIU_ARTICLE_DATA), []);
+    eq("art nothing left out of the list", A.SKIPPED, 0);
+    eq("art list comes from the data", A.ARTICLES.map((a) => a.id), window.WLIU_ARTICLE_DATA.articles.map((a) => a.id));
+    eq("art the two supplied articles are there", [!!IPAT, !!DEMO], [true, true]);
+    /* with the same first meaning, a learner has no way to tell which word a prompt wants */
+    A.ARTICLES.forEach((a) => { const firsts = a.words.map((w) => w.zh.split(/[；，]/)[0]); eq("art each word opens with its own meaning: " + a.id, firsts.filter((x, i) => firsts.indexOf(x) !== i), []); });
+    eq("art check bad root", [A.checkArticles(null), A.checkArticles({}), A.checkArticles({ articles: 5 })], [["bad root"], ["bad root"], ["bad root"]]);
+    const broken = (fn) => { const a = copy(IPAT); fn(a); return A.checkArticles({ articles: [a] }); };
+    [
+      ["id", (a) => { a.id = "Bad Id"; }],
+      ["proto id", (a) => { a.id = "__proto__"; }],
+      ["no title", (a) => { delete a.title; }],
+      ["no paragraphs", (a) => { a.paragraphs = []; }],
+      ["no words", (a) => { delete a.words; }],
+      ["no cloze", (a) => { a.cloze = "x"; }],
+      ["no writing", (a) => { a.writing = []; }],
+      ["form missing from text", (a) => { a.words[0].forms.push("zebra"); }],
+      ["form inside another word", (a) => { a.words[0].forms = ["impac"]; }],
+      ["duplicate word", (a) => { a.words.push(copy(a.words[0])); }],
+      ["accept must start with en", (a) => { a.words[1].accept = ["other"]; }],
+      ["homo not a list", (a) => { a.words[0].homo = "other"; }],
+      ["english zh", (a) => { a.words[0].zh = "effect"; }],
+      ["word without a cloze", (a) => { a.cloze.shift(); }],
+      ["cloze sentence changed", (a) => { a.cloze[0].before = "Changed " + a.cloze[0].before; }],
+      ["cloze wrong paragraph", (a) => { a.cloze[0].para = "Z"; }],
+      ["duplicate cloze id", (a) => { a.cloze[1].id = a.cloze[0].id; }],
+      ["duplicate paragraph label", (a) => { a.paragraphs[1].label = a.paragraphs[0].label; }],
+      ["model fails a check", (a) => { a.writing[0].models[0] = "no capital and no target"; }],
+      ["writing without mustInclude", (a) => { a.writing[0].mustInclude = []; }],
+      ["bad writing id", (a) => { delete a.writing[0].id; }]
+    ].forEach((x) => eq("art check catches " + x[0], broken(x[1]).length > 0, true));
+    const twice = copy(IPAT);
+    eq("art check duplicate article", A.checkArticles({ articles: [twice, twice] }).some((e) => /duplicate article id/.test(e)), true);
+    const overlap = copy(IPAT), ov = clozeOf(overlap, "affluence"), ov2 = clozeOf(overlap, "consumption");
+    ov2.before = ov.before; ov2.answers = ov.answers.slice(); ov2.after = ov.after;
+    eq("art check overlapping blanks", A.checkArticles({ articles: [overlap] }).some((e) => /overlaps/.test(e)), true);
+
+    /* step 1 follows the dictation's own rules, phrases included */
+    const gw = (a, en, s, m) => A.gradeWord(s, wordOf(a, en), m || "audio").r;
+    eq("art word exact", gw(IPAT, "impact", "impact"), "ok");
+    eq("art word case and spaces", gw(IPAT, "per capita", "  Per   CAPITA "), "ok");
+    eq("art phrase without the space", gw(IPAT, "per capita", "percapita"), "near");
+    eq("art phrase with a hyphen", gw(IPAT, "per capita", "per-capita"), "near");
+    eq("art phrase with a typed dash", gw(IPAT, "per capita", "per‐capita"), "near");
+    eq("art phrase misspelled", gw(IPAT, "per capita", "per capital"), "bad");
+    eq("art phrase demographic", gw(DEMO, "life expectancy", "life expectancy"), "ok");
+    eq("art word empty", gw(IPAT, "impact", "   "), "empty");
+    eq("art accepted spelling", [gw(DEMO, "urbanization", "urbanisation"), gw(DEMO, "socioeconomic", "socio-economic"), gw(DEMO, "stabilize", "stabilise")], ["alt", "alt", "alt"]);
+    eq("art accepted spelling counts as right", C.isRight(A.gradeWord("urbanisation", wordOf(DEMO, "urbanization"), "audio")), true);
+    eq("art no same-sound words here", A.wordItem(wordOf(IPAT, "address")).homo, []);
+    const homoWord = { en: "weather", zh: "天气", pos: "n.", forms: ["weather"], accept: ["weather"], homo: ["whether"] };
+    eq("art a listed same-sound word counts only when heard", [A.gradeWord("whether", homoWord, "audio").r, A.gradeWord("whether", homoWord, "zh").r, C.isRight(A.gradeWord("whether", homoWord, "audio"))], ["homo", "bad", true]);
+    eq("art a homo that is not a list is ignored", A.wordItem(Object.assign({}, homoWord, { homo: "whether" })).homo, []);
+    eq("art item has what grade needs", Object.keys(A.wordItem(wordOf(IPAT, "impact"))).sort(), ["alts", "homo", "id", "note", "word", "zh"]);
+
+    /* step 2a: exact form, ignoring case after trimming */
+    const gc = (a, word, s) => A.gradeCloze(s, clozeOf(a, word)).r;
+    eq("art cloze exact", gc(IPAT, "impact", "impacts"), "ok");
+    eq("art cloze case and trim", gc(IPAT, "impact", "  IMPACTS "), "ok");
+    eq("art cloze wrong form", gc(IPAT, "impact", "impact"), "bad");
+    eq("art cloze empty", gc(IPAT, "impact", " "), "empty");
+    eq("art cloze capital in the text", [gc(DEMO, "life expectancy", "life expectancy"), gc(DEMO, "life expectancy", "Life Expectancy")], ["ok", "ok"]);
+    eq("art cloze phrase needs its space", gc(DEMO, "life expectancy", "lifeexpectancy"), "bad");
+    eq("art cloze variants", [gc(DEMO, "socioeconomic", "socio-economic"), gc(DEMO, "urbanization", "urbanisation"), gc(DEMO, "stabilize", "stabilises"), gc(DEMO, "characterize", "characterised")], ["ok", "ok", "ok", "ok"]);
+    eq("art cloze no allowance for spaces", gc(DEMO, "socioeconomic", "socio economic"), "bad");
+
+    /* a shared sentence must not give away the items still to come */
+    const shared = clozeOf(IPAT, "affluence"), sharing = IPAT.cloze.filter((c) => A.clozeSentence(c) === A.clozeSentence(shared));
+    const flat = (parts) => parts.map((p) => (p.blank ? "#" : p.text)).join("");
+    const asked = A.clozeParts(IPAT, shared, A.clozeIds(IPAT), false);
+    eq("art a shared sentence has several items", sharing.length > 1, true);
+    eq("art every pending answer is hidden", A.blanksLeft(asked), sharing.length);
+    eq("art exactly one blank is the question", asked.filter((p) => p.current).length, 1);
+    eq("art hidden answers are not in the text", sharing.some((c) => flat(asked).indexOf(c.answers[0]) !== -1), false);
+    const told = A.clozeParts(IPAT, shared, A.clozeIds(IPAT), true);
+    eq("art after answering, the others stay hidden", A.blanksLeft(told), sharing.length - 1);
+    eq("art after answering, this one shows and is marked", told.filter((p) => p.mark).map((p) => p.text), [shared.answers[0]]);
+    const whole = A.clozeParts(IPAT, shared, [], true);
+    eq("art with nothing pending the whole sentence shows", whole.map((p) => p.text).join(""), A.clozeSentence(shared));
+    eq("art with nothing pending there are no blanks", A.blanksLeft(whole), 0);
+    const other = sharing.find((c) => c !== shared), someRight = A.clozeParts(IPAT, shared, sharing.filter((c) => c !== other).map((c) => c.id), false);
+    eq("art an item already right is shown", flat(someRight).indexOf(other.answers[0]) !== -1, true);
+    const lone = clozeOf(IPAT, "impact");
+    eq("art a sentence of its own has one blank", A.blanksLeft(A.clozeParts(IPAT, lone, A.clozeIds(IPAT), false)), 1);
+    eq("art blank sits where the answer was", A.clozeParts(IPAT, lone, [], false).map((p) => (p.blank ? lone.answers[0] : p.text)).join(""), A.clozeSentence(lone));
+    eq("art every sentence listed once", A.clozeSentences(IPAT).length, new Set(IPAT.cloze.map(A.clozeSentence)).size);
+
+    /* the practice queue */
+    const dr = A.newDrill(["a", "b", "c"]);
+    eq("art drill starts in order", [dr.queue, dr.score], [["a", "b", "c"], null]);
+    eq("art drill marks at start", A.drillMarks(dr, "a"), ["cur", "", ""]);
+    A.drillAnswer(dr, false);
+    eq("art a miss goes to the back", [dr.queue, dr.miss], [["b", "c", "a"], ["a"]]);
+    eq("art marks show the miss", A.drillMarks(dr, "b"), ["bad", "cur", ""]);
+    A.drillAnswer(dr, true);
+    eq("art a right answer leaves", dr.queue, ["c", "a"]);
+    eq("art marks show the right one", A.drillMarks(dr, ""), ["bad", "ok", ""]);
+    A.drillAnswer(dr, true);
+    A.drillAnswer(dr, false);
+    eq("art a second miss comes back again", [dr.queue, dr.miss, dr.score], [["a"], ["a"], null]);
+    A.drillAnswer(dr, true);
+    eq("art first-try number is true", [dr.queue, dr.score], [[], [2, 3]]);
+    A.drillAnswer(dr, true);
+    eq("art answering an empty queue does nothing", dr.score, [2, 3]);
+    A.drillAgain(dr, ["c", "b", "a"]);
+    eq("art practising again keeps the first score", [dr.queue, dr.score, dr.miss], [["c", "b", "a"], [2, 3], []]);
+    A.drillAnswer(dr, false); A.drillAnswer(dr, true); A.drillAnswer(dr, true); A.drillAnswer(dr, true);
+    eq("art a later run cannot rewrite it", [dr.queue, dr.score], [[], [2, 3]]);
+    A.drillAgain(dr, ["a"]); A.drillStop(dr);
+    eq("art a later run can be stopped", dr.queue, []);
+    const firstRun = A.newDrill(["a"]);
+    A.drillStop(firstRun);
+    eq("art a first run cannot be stopped early", firstRun.queue, ["a"]);
+    const perfect = A.newDrill(["a", "b"]);
+    A.drillAnswer(perfect, true); A.drillAnswer(perfect, true);
+    eq("art all right first time", perfect.score, [2, 2]);
+    const rand = A.shuffled(["a", "b", "c", "d"], () => 0);
+    eq("art shuffled is the same items", rand.slice().sort(), ["a", "b", "c", "d"]);
+    eq("art shuffled changes the order", rand.join("") !== "abcd", true);
+
+    /* step 2b: surface checks only */
+    const wImpact = IPAT.writing.find((w) => w.word === "impact"), wDue = DEMO.writing.find((w) => w.word === "due to");
+    const codes = (t, w) => A.softHints(t, w || wImpact).map((h) => h.code);
+    eq("art soft all fine", codes("Sleep has a big impact on us."), []);
+    eq("art soft empty", [codes(""), codes("   \n "), codes(null), codes(undefined)], [["empty"], ["empty"], ["empty"], ["empty"]]);
+    eq("art soft no target", codes("Sleep matters a lot."), ["include"]);
+    eq("art soft target must be whole words", [codes("It impacted on us."), codes("A reimpact on us."), codes("It had an impact-on effect.")], [["include"], ["include"], ["include"]]);
+    eq("art soft target ignores case and spacing", [codes("IMPACT ON us."), codes("Big impact   on us.")], [[], []]);
+    eq("art soft other listed form", codes("It impacts on us."), []);
+    eq("art soft no capital", codes("sleep has an impact on us."), ["capital"]);
+    eq("art soft no end mark", codes("Sleep has an impact on us"), ["end"]);
+    eq("art soft several at once", codes("sleep has no effect"), ["include", "capital", "end"]);
+    eq("art soft Chinese full stop is not an English one", codes("Sleep has an impact on us。"), ["end"]);
+    eq("art soft question and exclamation", [codes("Does sleep have an impact on us?"), codes("Sleep has an impact on us!")], [[], []]);
+    eq("art soft closing quote after the mark", codes("He said, \"Sleep has an impact on us.\""), []);
+    eq("art soft may open with a quote or number", [codes("\"Sleep has an impact on us.\""), codes("3 hours have an impact on us.")], [[], []]);
+    eq("art soft a phrase target", [codes("Due to rain, we left.", wDue), codes("Thanks to rain, we left.", wDue)], [[], ["include"]]);
+    eq("art soft never repeats what was typed", A.softHints("<img src=x onerror=alert(1)>", wImpact).some((h) => h.msg.indexOf("<img") !== -1), false);
+    eq("art hasPhrase", [A.hasPhrase("Due  to rain", "due to"), A.hasPhrase("residue to", "due to"), A.hasPhrase("", "due to"), A.hasPhrase("x", "")], [true, false, false, false]);
+    /* an apostrophe between letters holds a word together; the possessive 's leaves the word before it whole */
+    eq("art whole word stops at a contraction", [A.hasPhrase("I can't swim.", "can"), A.hasPhrase("I can’t swim.", "can"), A.hasPhrase("I can swim.", "can"), A.hasPhrase("at five o'clock", "clock")], [false, false, true, false]);
+    eq("art whole word allows a possessive", [A.hasPhrase("the environment's health", "environment"), A.hasPhrase("the students' ability", "students"), A.hasPhrase("the ENVIRONMENT’S health", "environment")], [true, true, true]);
+    eq("art highlight skips a contraction", A.markWords("He can’t but can.", [{ en: "can", forms: ["can"] }]).filter((x) => x.en).length, 1);
+    /* a dash is punctuation, a hyphen joins */
+    eq("art whole word stops at a dash", [A.hasPhrase("Many students—despite the cost—stayed.", "despite"), A.hasPhrase("students–despite", "despite"), A.hasPhrase("学生——despite 这些", "despite"), A.hasPhrase("students--despite", "despite"), A.hasPhrase("teachers—even though fees", "even though")], [true, true, true, true, true]);
+    eq("art whole word still joins at a hyphen", [A.hasPhrase("a post-despite world", "despite"), A.hasPhrase("well-being", "being"), A.hasPhrase("non-address", "address")], [false, false, false]);
+    /* a different word is not a slip in this one */
+    eq("art a slip is near the answer", [A.isNearMiss("impact", "impacts"), A.isNearMiss("highlited", "highlighted"), A.isNearMiss("DEFEND", "defended"), A.isNearMiss("migration", "immigration")], [true, true, true, true]);
+    eq("art another word is not near it", [A.isNearMiss("Nevertheless", "Nonetheless"), A.isNearMiss("complicated", "complex"), A.isNearMiss("determine", "identify"), A.isNearMiss("measure", "measurement")], [false, false, false, false]);
+    eq("art the word in another form is a slip, however far", [["stress", "stress"], ["stress", "Stressed"], ["stress", "stresses"], ["defend", "defending"]].map(([w, x]) => A.clozeNear(x, clozeOf(IPAT, w))).concat([["outline", "outlining"], ["urbanization", "urbanisatoin"]].map(([w, x]) => A.clozeNear(x, clozeOf(DEMO, w)))), [true, true, true, true, true, true]);
+    eq("art another word is not a slip in the word", [A.clozeNear("emphasizing", clozeOf(IPAT, "stress")), A.clozeNear("argument", clozeOf(IPAT, "stress")), A.clozeNear("asdf", clozeOf(IPAT, "debate")), A.clozeNear("Nevertheless", clozeOf(DEMO, "nonetheless"))], [false, false, false, false]);
+    eq("art the cue is the first letters as written", [A.clozeStart({ answers: ["Nonetheless"] }), A.clozeStart({ answers: ["per capita"] }), A.clozeStart({ answers: ["a lot"] })], ["No", "pe", "a"]);
+
+    /* step 3: every form highlighted, whole words only, and not one character lost */
+    const each = (fn) => A.ARTICLES.forEach((a) => a.paragraphs.forEach((p) => fn(a, p, A.markWords(p.text, a.words))));
+    let lostText = 0, wrongWord = 0;
+    each((a, p, parts) => {
+      if (parts.map((x) => x.text).join("") !== p.text) lostText++;
+      parts.forEach((x) => { if (x.en && wordOf(a, x.en).forms.indexOf(x.text) === -1) wrongWord++; });
+    });
+    eq("art highlighting loses no text", lostText, 0);
+    eq("art each highlight is a listed form", wrongWord, 0);
+    A.ARTICLES.forEach((a) => a.words.forEach((w) => w.forms.forEach((f) => {
+      const hits = a.paragraphs.reduce((n, p) => n + A.markWords(p.text, a.words).filter((x) => x.en === w.en && x.text === f).length, 0);
+      eq("art form highlighted: " + a.id + " " + f, hits > 0, true);
+    })));
+    const mw = (t, ws) => A.markWords(t, ws).filter((x) => x.en).map((x) => x.text);
+    const fake = [{ en: "complex", forms: ["complex"] }, { en: "term", forms: ["term"] }, { en: "life expectancy", forms: ["life expectancy", "Life expectancy"] }, { en: "life", forms: ["life"] }];
+    eq("art no match inside a longer word", mw("complexity and complexes", fake), []);
+    eq("art no match inside a hyphenated word", mw("a long-term plan", fake), []);
+    eq("art punctuation is a boundary", mw("It is complex, “complex”.", fake), ["complex", "complex"]);
+    eq("art phrase is one highlight", mw("Life expectancy is high; life expectancy rose.", fake), ["Life expectancy", "life expectancy"]);
+    eq("art forms match as listed", mw("COMPLEX and Complex", fake), []);
+    eq("art a longer form wins", A.markWords("life expectancy", fake).map((x) => x.en), ["life expectancy"]);
+    eq("art markup in the text is not special", A.markWords("<b>complex</b>", fake).map((x) => x.text), ["<b>", "complex", "</b>"]);
+
+    /* long text is spoken in pieces, and none of it goes missing */
+    let chunkLost = 0, chunkLong = 0;
+    each((a, p) => {
+      const c = A.speechChunks(p.text);
+      if (c.join(" ") !== p.text.replace(/\s+/g, " ").trim()) chunkLost++;
+      if (c.some((x) => x.split(/\s+/).length > A.LIMITS.chunkWords)) chunkLong++;
+    });
+    eq("art speech pieces lose no text", chunkLost, 0);
+    eq("art speech pieces stay short", chunkLong, 0);
+    /* a sentence with nowhere to cut, and one with odd spacing */
+    const noCommas = Array.from({ length: 60 }, (_, i) => "word" + i).join(" ") + ".", noCommaPieces = A.speechChunks(noCommas);
+    eq("art a long sentence with no comma is still cut short", [noCommaPieces.every((x) => x.split(/\s+/).length <= A.LIMITS.chunkWords), noCommaPieces.join(" ")], [true, noCommas]);
+    const mixed = "Short start, " + Array.from({ length: 40 }, (_, i) => "word" + i).join(" ") + ", short end.", mixedPieces = A.speechChunks(mixed);
+    eq("art a long stretch between commas is cut too", [mixedPieces.every((x) => x.split(/\s+/).length <= A.LIMITS.chunkWords), mixedPieces.join(" ")], [true, mixed]);
+    eq("art two spaces after a full stop lose nothing", A.speechChunks("One here.  Two there.").join(" "), "One here. Two there.");
+    eq("art sentences split", A.splitSentences("One here. Two there? Three! Four."), ["One here.", "Two there?", "Three!", "Four."]);
+    eq("art abbreviations do not split", A.splitSentences("The U.S. Senate met. Dr. Smith spoke, e.g. Monday."), ["The U.S. Senate met.", "Dr. Smith spoke, e.g. Monday."]);
+    eq("art a closing quote stays with its sentence", A.splitSentences("He said “stop.” Then he left."), ["He said “stop.”", "Then he left."]);
+    eq("art a decimal does not split", A.splitSentences("It rose 2.5 percent."), ["It rose 2.5 percent."]);
+    eq("art a short sentence stays whole", A.speechChunks("Just this."), ["Just this."]);
+    eq("art a very long sentence is cut at its commas", A.speechChunks(A.clozeSentence(shared)).length > 1, true);
+
+    /* steps unlock in order */
+    const stepRec = () => A.blankRecord(IPAT);
+    const fresh = stepRec();
+    eq("art a new record starts at step 1", [fresh.at, fresh.dict.queue.length, fresh.cloze.queue.length], ["dict", IPAT.words.length, IPAT.cloze.length]);
+    eq("art a new record has the words in some order", fresh.dict.order.slice().sort(), A.wordIds(IPAT).slice().sort());
+    eq("art a new record keeps the cloze order", fresh.cloze.order, A.clozeIds(IPAT));
+    eq("art only step 1 opens at first", ["dict", "cloze", "write", "read", "sum"].map((x) => A.canAt(fresh, x)), [true, false, false, false, false]);
+    eq("art step bar at first", A.stepBoxes(fresh), [{ done: false, open: true }, { done: false, open: false }, { done: false, open: false }]);
+    const passDrill = (d) => { while (d.queue.length) A.drillAnswer(d, true); };
+    passDrill(fresh.dict);
+    eq("art step 1 done opens the fill-in", ["cloze", "write"].map((x) => A.canAt(fresh, x)), [true, false]);
+    eq("art step 2 opens at the fill-in", [A.stepTarget(fresh, 1), A.furthestAt(fresh)], ["cloze", "cloze"]);
+    passDrill(fresh.cloze);
+    eq("art fill-in done opens writing, not reading", ["write", "read"].map((x) => A.canAt(fresh, x)), [true, false]);
+    eq("art step 2 then leads to writing", A.stepTarget(fresh, 1), "write");
+    eq("art step 2 is not done yet", A.stepBoxes(fresh)[1], { done: false, open: true });
+    fresh.write.done = true;
+    eq("art writing done opens reading", [A.canAt(fresh, "read"), A.canAt(fresh, "sum"), A.stepBoxes(fresh)[1].done, A.stepBoxes(fresh)[2].open], [true, false, true, true]);
+    eq("art a finished step 2 opens at its start", A.stepTarget(fresh, 1), "cloze");
+    fresh.read.done = true;
+    eq("art reading done finishes the unit", [A.canAt(fresh, "sum"), A.furthestAt(fresh), A.stepBoxes(fresh)[2].done], [true, "sum", true]);
+    eq("art which step each screen is", ["dict", "cloze", "write", "read", "sum"].map(A.screenStep), [0, 1, 1, 2, 2]);
+
+    /* numbers */
+    const numbers = stepRec();
+    numbers.dict.score = [20, 24]; numbers.cloze.score = [19, 24];
+    numbers.write.items = { [IPAT.writing[0].id]: { t: " A sentence. ", shown: true, done: true }, [IPAT.writing[1].id]: { t: "   ", shown: true, done: true }, [IPAT.writing[2].id]: { t: "A draft.", shown: false, done: false } };
+    eq("art summary numbers", A.unitNumbers(IPAT, numbers), { dict: [20, 24], cloze: [19, 24], written: 1, writeTotal: IPAT.writing.length });
+    eq("art nothing is claimed before it happens", A.unitNumbers(IPAT, stepRec()), { dict: null, cloze: null, written: 0, writeTotal: IPAT.writing.length });
+    eq("art next writing skips what is done", A.nextWriteId(IPAT, numbers), IPAT.writing[2].id);
+
+    /* stored shape */
+    eq("art keys are separate from the other sections", new Set([A.KEY, A.RECOVERY_KEY, C.KEY, C.PKEY, Y.KEY, Y.RECOVERY_KEY]).size, 6);
+    eq("art keys per profile", [P.keyFor(A.KEY, user("Alice")), P.keyFor(A.KEY, { kind: "guest" })], ["wliu-article-v1@alice", "wliu-article-v1"]);
+    [null, 5, "x", [], {}, { v: 2 }, { v: "1" }].forEach((x) => eq("art store refused " + JSON.stringify(x), A.saneStore(x), A.blankStore()));
+    const started = A.blankStore(); started.articles.ipat = stepRec(); started.open = "ipat";
+    eq("art a saved store comes back the same", A.saneStore(copy(started)), started);
+    eq("art a saved store is not damaged", A.readStored(JSON.stringify(started)).damaged, false);
+    eq("art a blank store is not damaged", A.readStored(JSON.stringify(A.blankStore())).damaged, false);
+    eq("art nothing stored", A.readStored(null), { store: A.blankStore(), damaged: false });
+    ["{broken", "null", "5", "[]", '{"v":2}', '{"v":1,"articles":5}', '{"v":1,"articles":{"gone":{}}}', '{"v":1,"articles":{"ipat":5}}', '{"v":1,"articles":{"ipat":{"dict":5}}}', '{"v":1,"articles":{"ipat":{"write":{"items":{"nope":{"t":"x"}}}}}}'].forEach((raw) => {
+      const got = A.readStored(raw);
+      eq("art damaged is reported: " + raw, got.damaged, true);
+      eq("art damaged still gives a store: " + raw, got.store.v, 1);
+    });
+    const dirtyRec = { at: "read", dict: { order: ["impact", "nope", "impact"], queue: ["impact", "nope", 5], miss: ["nope"], score: [99, 3] }, cloze: "x", write: { cur: "nope", done: "yes", items: { [IPAT.writing[0].id]: { t: 5, shown: 1, done: "x" }, nope: { t: "x" } } }, read: { para: 99, done: 1 } };
+    const cleaned = A.saneRecord(dirtyRec, IPAT);
+    eq("art unknown ids dropped and repeats folded", cleaned.dict.queue.indexOf("nope") === -1 && cleaned.dict.order.filter((x) => x === "impact").length === 1, true);
+    eq("art words missing from a run are added", cleaned.dict.order.length, IPAT.words.length);
+    eq("art a score that cannot be true is dropped", cleaned.dict.score, null);
+    eq("art a bad part starts fresh", cleaned.cloze.queue, A.clozeIds(IPAT));
+    eq("art a bad entry keeps no bad fields", cleaned.write.items[IPAT.writing[0].id], { t: "", shown: false, done: false });
+    eq("art unknown entries are gone", Object.keys(cleaned.write.items), [IPAT.writing[0].id]);
+    eq("art a screen not yet open falls back", cleaned.at, "dict");
+    eq("art a paragraph out of range falls back", cleaned.read.para, 0);
+    eq("art a later step cannot be finished before an earlier one", [cleaned.write.done, cleaned.read.done], [false, false]);
+    [[1], [1, 2, 3], ["1", 2], [-1, 2], [3, 2], [0, 0], [1.5, 2], "x", 5].forEach((sc) => eq("art score refused " + JSON.stringify(sc), A.saneDrill({ order: A.wordIds(IPAT), queue: ["impact"], score: sc }, A.wordIds(IPAT)).score, null));
+    eq("art a finished run with no score gets one from its misses", A.saneDrill({ order: ["impact", "debate"], queue: [], miss: ["debate"] }, ["impact", "debate"]).score, [1, 2]);
+    const added = A.saneDrill({ order: ["impact"], queue: ["impact"], miss: [], score: null }, ["impact", "debate"]);
+    eq("art a word added to the article joins a run in progress", [added.order, added.queue], [["impact", "debate"], ["impact", "debate"]]);
+    eq("art a finished step stays finished when a word is added", A.saneDrill({ order: ["impact"], queue: [], miss: [], score: [1, 1] }, ["impact", "debate"]).queue, []);
+    const textRec = (t) => A.saneRecord({ write: { items: { [IPAT.writing[0].id]: { t, shown: true, done: false } } } }, IPAT).write.items[IPAT.writing[0].id].t;
+    eq("art very long text is cut", textRec("x".repeat(A.LIMITS.text + 50)).length, A.LIMITS.text);
+    eq("art markup in text is kept as typed", textRec("<b>x</b>"), "<b>x</b>");
+    eq("art writing moves past what is done", A.saneRecord({ write: { cur: IPAT.writing[0].id, items: { [IPAT.writing[0].id]: { t: "x", shown: true, done: true } } } }, IPAT).write.cur, IPAT.writing[1].id);
+    const writeAll = {}; IPAT.writing.forEach((w) => { writeAll[w.id] = { t: "x", shown: true, done: true }; });
+    const passed2 = A.saneRecord({ dict: { order: A.wordIds(IPAT), queue: [], miss: [], score: [1, 24] }, cloze: { order: A.clozeIds(IPAT), queue: [], miss: [], score: [2, 24] }, write: { items: writeAll }, at: "read" }, IPAT);
+    eq("art every sentence marked counts as finished", [passed2.write.done, passed2.at], [true, "read"]);
+    eq("art open must be a started article", [A.saneStore({ v: 1, open: "ipat" }).open, A.saneStore({ v: 1, open: "nope", articles: {} }).open, A.saneStore({ v: 1, open: "constructor", articles: {} }).open], ["", "", ""]);
+    const protoStore = A.saneStore(JSON.parse('{"v":1,"__proto__":{"polluted":1},"articles":{"__proto__":{"polluted":1},"ipat":{"__proto__":{"polluted":1},"write":{"items":{"__proto__":{"polluted":1}}}}}}'));
+    eq("art __proto__ pollutes nothing", [({}).polluted, Object.keys(protoStore.articles), Object.keys(protoStore.articles.ipat.write.items)], [undefined, ["ipat"], []]);
+
+    /* export and import: an old file has no such part, and that must not be an error */
+    const oldFile = JSON.stringify({ app: "ielts-dictation", exportedAt: "x", state: { v: 1, start: "2026-11-01", u: 1, w: {}, l: {}, last: {} }, prefs: { mode: "audio", accent: "en-GB" } });
+    eq("art an old export still imports", [C.parseImport(oldFile).state.start, C.parseImport(oldFile).articles], ["2026-11-01", undefined]);
+    eq("art a bare old state still imports", C.parseImport(JSON.stringify({ v: 1, start: "2026-11-01" })).articles, undefined);
+    const newFile = JSON.parse(oldFile); newFile.articles = started;
+    eq("art a new export carries the part", A.importable(C.parseImport(JSON.stringify(newFile)).articles), started);
+    newFile.articles = "garbage";
+    eq("art a damaged part does not stop the import", [C.parseImport(JSON.stringify(newFile)).state.start, A.importable(C.parseImport(JSON.stringify(newFile)).articles)], ["2026-11-01", null]);
+    [undefined, null, 5, "x", [], { v: 2 }, { v: 1 }, { v: 1, articles: 5 }, { v: 1, articles: { ipat: 5 } }, { v: 1, articles: { ipat: {} } }, { v: 1, articles: { ipat: { dict: 5, cloze: [], write: "x", read: null } } },
+      { v: 1, open: "ipat", articles: { ipat: { at: "zzz", dict: { order: 5, queue: "x" }, cloze: [], write: { items: 7 }, read: 9 } } }, { v: 1, articles: { "old-removed-id": copy(started.articles.ipat) } },
+      JSON.parse('{"v":1,"articles":{"__proto__":{"dict":{"order":[]},"cloze":{"order":[]}}}}')].forEach((x) => eq("art part refused " + JSON.stringify(x), A.importable(x), null));
+    eq("art part with nothing started", [A.importable({ v: 1, articles: {} }), A.importable(A.blankStore()), A.startedCount(A.blankStore())], [A.blankStore(), A.blankStore(), 0]);
+    eq("art part that lost one article keeps the rest", A.importable({ v: 1, open: "ipat", articles: { ipat: copy(started.articles.ipat), "old-removed-id": copy(started.articles.ipat), dtm: 5 } }), started);
+    eq("art the dictation state knows nothing of articles", Object.keys(C.blank()).indexOf("articles"), -1);
+  }
+
   /* ---------- a throwaway frame with stubbed storage and speech, so nothing below can touch real progress or make a sound ---------- */
   const fakeStorage = (seed, log) => {
     const data = new Map(Object.entries(seed || {}));
@@ -511,6 +816,8 @@
         define(win, "sessionStorage", guard(session));
         const silent = { speak() {}, cancel() {}, resume() {}, getVoices: () => [], addEventListener() {} };
         define(win, "speechSynthesis", () => silent);
+        if (o.noSpeech) win.SpeechSynthesisUtterance = undefined;
+        if (o.viewport) define(win, "visualViewport", () => o.viewport);
         const load = (src) => new Promise((ok, bad) => {
           const s = win.document.createElement("script");
           s.src = new URL(src, location.href).href;
@@ -672,6 +979,671 @@
     b.frame.remove();
   }
 
+  /* 文章精读 mounted for real, driven only through its own buttons and fields: a whole unit, then a reload, export, import and clear. */
+  async function articleModuleTests() {
+    const SCRIPTS = ["../js/profile.js", "../listening/data.js", "../listening/core.js", "../listening/listening.js", "../listening/article-data.js", "../listening/article-core.js", "../listening/article.js"];
+    const alice = { kind: "user", name: "Alice", id: "alice" }, KEY = "wliu-article-v1@alice", ID = "ipat", art = A.BY_ID.get(ID);
+    const setup = async (o, profile) => {
+      const s = await sandbox(o || {}, SCRIPTS), d = s.win.document, a = d.createElement("div"), b = d.createElement("div");
+      d.body.append(a, b);
+      const App = s.win.WLIU_LISTENING, Art = s.win.WLIU_ARTICLE, views = [], spoken = [];
+      /* A voice that starts and ends at once, so nothing waits on real audio. */
+      s.win.speechSynthesis.speak = (u) => { spoken.push(u.text); if (u.onstart) u.onstart(); if (u.onend) u.onend(); };
+      Art.on("view", (v) => views.push(v));
+      App.mount(a, profile || alice);
+      Art.mount(b, App, profile || alice);
+      const $ = (id) => d.getElementById(id);
+      const saved = () => JSON.parse(s.data.get(KEY)).articles[ID];
+      const act = (name, v) => b.querySelector('[data-act="' + name + '"]' + (v === undefined ? "" : '[data-v="' + v + '"]'));
+      const submit = (text) => { $("ar-input").value = text; $("ar-form").requestSubmit(); };
+      const next = () => $("ar-form").requestSubmit();
+      const type = (text) => { const t = $("ar-w-text"); t.value = text; t.dispatchEvent(new s.win.Event("input", { bubbles: true })); };
+      const steps = () => Array.from(b.querySelectorAll("#ar-steps button"));
+      return { s, d, a, b, App, Art, views, spoken, $, saved, act, submit, next, type, steps };
+    };
+    const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const importFile = async (t, text) => {
+      const dt = new t.s.win.DataTransfer();
+      dt.items.add(new t.s.win.File([text], "p.json", { type: "application/json" }));
+      const file = t.d.getElementById("ls-import-file");
+      file.files = dt.files;
+      file.dispatchEvent(new t.s.win.Event("change", { bubbles: true }));
+      await waitFor(() => t.a.querySelector('[data-act="import-confirm"]'));
+      const line = t.d.getElementById("ls-confirm-text").textContent;
+      t.a.querySelector('[data-act="import-confirm"]').click();
+      t.a.querySelector('[data-act="import-confirm"]').click();
+      return line;
+    };
+
+    /* the list comes from the data, and nothing is written until something is opened */
+    const t = await setup(), { s, d, b, App, Art, views, spoken, $, saved, act, submit, next, type, steps } = t;
+    eq("art mod reads only the user's keys", s.log.filter((x) => /article/.test(x)), ["get wliu-article-v1@alice", "get wliu-article-v1-recovery@alice"]);
+    eq("art mod writes nothing at mount", s.data.has(KEY), false);
+    eq("art mod one card per article", b.querySelectorAll(".ar-card").length, A.ARTICLES.length);
+    const card = act("open", ID).closest(".ar-card");
+    eq("art mod card has the title", card.querySelector(".ar-card-title").textContent, art.title);
+    eq("art mod card has the word count", card.textContent.indexOf(art.words.length + " 词") !== -1, true);
+    eq("art mod card lists the three steps, none done", [card.querySelectorAll(".ar-card-steps li").length, card.querySelectorAll(".is-done").length], [3, 0]);
+    eq("art mod card says start", act("open", ID).textContent, "开始");
+
+    /* step 1 */
+    act("open", ID).click();
+    eq("art mod opening counts as practice", [views[views.length - 1], Art.inSession()], ["session", true]);
+    eq("art mod opening saves under the user's key", saved().at, "dict");
+    eq("art mod step bar", steps().map((x) => x.disabled), [false, true, true]);
+    eq("art mod step 1 is current", steps().map((x) => x.getAttribute("aria-current")), ["step", null, null]);
+    eq("art mod the first word is spoken after a press", spoken, [saved().dict.queue[0]]);
+    eq("art mod focus is in the answer box", d.activeElement.id, "ar-input");
+    const words = saved().dict.order.slice(), n = words.length;
+    eq("art mod blind: no word on screen", b.querySelector("#ar-body").textContent.indexOf(words[0]), -1);
+    eq("art mod hint button is there, without the meaning", act("hint").textContent, "看中文提示");
+    act("hint").click();
+    eq("art mod hint shows the meaning", act("hint").textContent, A.findWord(art, words[0]).zh);
+    act("slow").click();
+    eq("art mod slow replay speaks the word", spoken[spoken.length - 1], words[0]);
+    spoken.length = 0;
+    submit("");
+    eq("art mod Enter on an empty box replays", [spoken, saved().dict.queue[0]], [[words[0]], words[0]]);
+    submit("zzzz");
+    eq("art mod a wrong word shows its spelling", $("ar-fb").textContent.indexOf(words[0]) !== -1, true);
+    eq("art mod a wrong word goes to the back", saved().dict.queue[n - 1], words[0]);
+    eq("art mod the box can go on with Enter", $("ar-submit").textContent, "下一个");
+    next();
+    eq("art mod the next word starts with an empty box", [$("ar-input").value, saved().dict.queue[0]], ["", words[1]]);
+    $("ar-skip").click();
+    eq("art mod 不会 shows the answer", [$("ar-fb").textContent.indexOf(words[1]) !== -1, $("ar-skip").hidden, d.activeElement.id], [true, true, "ar-input"]);
+    next();
+    /* a reload in the middle comes back to the same word, without speech that was never pressed for */
+    const mid = await setup({ local: Object.fromEntries(s.data) });
+    eq("art mod a new page does not jump into the unit by itself", [mid.Art.inSession(), mid.views], [false, []]);
+    mid.Art.resume(false);
+    eq("art mod reload returns to the same word", [mid.Art.inSession(), mid.saved().dict.queue[0], mid.$("ar-count").textContent], [true, words[2], "0 / " + n]);
+    eq("art mod reload says nothing until pressed", mid.spoken, []);
+    mid.act("play").click();
+    eq("art mod a press plays it", mid.spoken, [words[2]]);
+    mid.$("ar-input").blur();
+    mid.Art.resume(true);
+    eq("art mod coming back to an open unit restores focus and speaks nothing new", [mid.d.activeElement.id, mid.spoken.length], ["ar-input", 1]);
+    mid.s.frame.remove();
+    const again = await setup({ local: Object.fromEntries(s.data) });
+    again.Art.resume(true);
+    eq("art mod resuming from a press plays the word", again.spoken, [words[2]]);
+    again.s.frame.remove();
+    let guard = 0;
+    while (saved().dict.queue.length && guard++ < 200) { submit(saved().dict.queue[0]); next(); }
+    eq("art mod missed words came back until right", saved().dict.queue, []);
+    eq("art mod the first-try number is true", saved().dict.score, [n - 2, n]);
+    eq("art mod step 1 is done and step 2 opens", steps().map((x) => [x.disabled, x.classList.contains("is-done")]), [[false, true], [false, false], [true, false]]);
+    eq("art mod one button goes on", [$("ar-next").textContent, d.activeElement.id], ["继续：写句子", "ar-next"]);
+    eq("art mod the result is on screen", b.querySelector(".ls-score").textContent, (n - 2) + " / " + n);
+    act("say-word", "per capita").click();
+    eq("art mod a phrase can be spoken from the list", spoken[spoken.length - 1], "per capita");
+
+    /* practising again changes nothing that was recorded */
+    act("again").click();
+    eq("art mod practising again keeps the score", [saved().dict.queue.length, saved().dict.score], [n, [n - 2, n]]);
+    submit(saved().dict.queue[0]); next();
+    act("again-stop").click();
+    eq("art mod stopping early leaves the result", [saved().dict.queue, saved().dict.score, !!$("ar-next")], [[], [n - 2, n], true]);
+
+    /* step 2a */
+    spoken.length = 0;
+    $("ar-next").click();
+    eq("art mod the fill-in comes next, no speech", [saved().at, spoken, d.activeElement.id], ["cloze", [], "ar-input"]);
+    eq("art mod the fill-in keeps the data's order", saved().cloze.order, A.clozeIds(art));
+    const c0 = A.findCloze(art, saved().cloze.queue[0]);
+    eq("art mod sentence, translation and note on screen", [$("ar-prompt").textContent.indexOf(c0.after) !== -1, $("ar-prompt").textContent.indexOf(c0.zh) !== -1, !c0.note || $("ar-prompt").textContent.indexOf(c0.note) !== -1], [true, true, true]);
+    eq("art mod the answer is not on screen", $("ar-prompt").textContent.indexOf(c0.answers[0]), -1);
+    eq("art mod nothing is offered to hear before answering", act("hear-sentence"), null);
+    submit("");
+    eq("art mod an empty fill-in is not an answer", saved().cloze.queue[0], c0.id);
+    submit("nope");
+    eq("art mod a wrong fill-in shows the form", $("ar-fb").textContent.indexOf(c0.answers[0]) !== -1, true);
+    eq("art mod a wrong fill-in comes back at the end", saved().cloze.queue[saved().cloze.queue.length - 1], c0.id);
+    eq("art mod focus leaves the box for the next button", d.activeElement.id, "ar-submit");
+    next();
+    let blanksRight = true, hearRight = true, fullSeen = 0;
+    guard = 0;
+    while (saved().cloze.queue.length && guard++ < 200) {
+      const id = saved().cloze.queue[0], c = A.findCloze(art, id), others = saved().cloze.queue.filter((x) => x !== id && A.clozeSentence(A.findCloze(art, x)) === A.clozeSentence(c));
+      if ($("ar-prompt").querySelectorAll(".ar-blank").length !== others.length + 1) blanksRight = false;
+      submit(" " + c.answers[0].toUpperCase() + " ");
+      const left = $("ar-prompt").querySelectorAll(".ar-blank").length;
+      if (left !== others.length || (left === 0) !== !!act("hear-sentence")) hearRight = false;
+      if (left === 0) {
+        fullSeen++;
+        if ($("ar-prompt").querySelector(".ar-sentence").textContent !== A.clozeSentence(c)) hearRight = false;
+      }
+      next();
+    }
+    eq("art mod a shared sentence hides what is still to come", blanksRight, true);
+    eq("art mod whole sentence and sound only once nothing is hidden", hearRight, true);
+    eq("art mod every sentence is shown whole at some point", fullSeen >= A.clozeSentences(art).length, true);
+    eq("art mod the fill-in number is true", saved().cloze.score, [art.cloze.length - 1, art.cloze.length]);
+    eq("art mod one button goes on to writing", $("ar-next").textContent, "继续：造句");
+    spoken.length = 0;
+    act("say-sent", "0").click();
+    eq("art mod a finished sentence can be heard", spoken, [A.speechChunks(A.clozeSentences(art)[0].text)[0]]);
+
+    /* step 2b */
+    $("ar-next").click();
+    const w0 = art.writing[0], evil = "<img src=x onerror=window.__hacked=1><script>window.__hacked=1<\/script>";
+    eq("art mod writing shows the pattern, word and idea", [$("ar-body").textContent.indexOf(w0.pattern) !== -1, $("ar-body").textContent.indexOf(w0.word) !== -1, $("ar-body").textContent.indexOf(w0.prompt_zh) !== -1], [true, true, true]);
+    eq("art mod the page says it cannot judge grammar", $("ar-body").textContent.indexOf("判断不了语法") !== -1, true);
+    eq("art mod models stay hidden while writing", $("ar-models").hidden, true);
+    type(evil);
+    act("reveal").click();
+    eq("art mod the draft is saved", saved().write.items[w0.id].t, evil);
+    eq("art mod models and the check list are revealed", [$("ar-models").hidden, $("ar-models").textContent.indexOf(w0.models[0]) !== -1, $("ar-models").textContent.indexOf(w0.check[0]) !== -1], [false, true, true]);
+    eq("art mod the sentence stays beside them to edit", [$("ar-w-text").value, $("ar-compare").classList.contains("is-open")], [evil, true]);
+    eq("art mod soft hints show", $("ar-hints").querySelectorAll(".ls-tip").length > 0, true);
+    eq("art mod typed markup never becomes markup", b.querySelectorAll("img, script").length, 0);
+    type(w0.models[0]);
+    eq("art mod hints follow the edit and say what they are not", [$("ar-hints").querySelectorAll(".ls-tip").length, $("ar-hints").textContent.indexOf("不代表语法正确") !== -1], [0, true]);
+    spoken.length = 0;
+    act("say-model", "0").click();
+    eq("art mod a model can be heard", spoken, [A.speechChunks(w0.models[0])[0]]);
+    type(evil);
+    spoken.length = 0;
+    const synth = s.win.speechSynthesis, realCancel = synth.cancel;
+    let cancels = 0;
+    synth.cancel = () => { cancels++; };
+    synth.speaking = true;
+    act("write-done").click();
+    synth.speaking = false;
+    synth.cancel = realCancel;
+    await sleep(70);
+    eq("art mod finishing a sentence stops a model being read", cancels > 0, true);
+    eq("art mod what was typed is never spoken", spoken, []);
+    eq("art mod marked done moves on", [saved().write.items[w0.id].done, saved().write.cur], [true, art.writing[1].id]);
+    /* an empty sentence is hinted at, not blocked, and does not count */
+    act("reveal").click();
+    eq("art mod empty gets a hint", $("ar-hints").textContent.indexOf("还没有写句子") !== -1, true);
+    act("write-done").click();
+    art.writing.slice(2).forEach((w) => { type(w.models[0]); act("reveal").click(); act("write-done").click(); });
+    eq("art mod writing is finished", [saved().write.done, saved().write.cur], [true, ""]);
+    eq("art mod step 2 is done and step 3 opens", steps().map((x) => [x.disabled, x.classList.contains("is-done")]), [[false, true], [false, true], [false, false]]);
+    eq("art mod the count of sentences is true", b.querySelector(".ls-score").textContent, (art.writing.length - 1) + " / " + art.writing.length + " 句");
+    eq("art mod typed markup shows as text", [b.querySelector(".ar-user").textContent, b.querySelectorAll("#ar-body img, #ar-body script").length, s.win.__hacked], [evil, 0, undefined]);
+    act("edit", w0.id).click();
+    eq("art mod a finished sentence can be edited", [$("ar-w-text").value, $("ar-models").hidden, act("write-done").textContent], [evil, false, "保存修改"]);
+    type("Sleep has an impact on us.");
+    act("write-done").click();
+    eq("art mod the edit is saved and the result comes back", [saved().write.items[w0.id].t, saved().write.done, saved().write.cur, !!$("ar-next")], ["Sleep has an impact on us.", true, "", true]);
+    eq("art mod one button goes on to reading", $("ar-next").textContent, "继续：阅读原文");
+
+    /* step 3 */
+    $("ar-next").click();
+    const wb = Array.from(b.querySelectorAll(".ar-word"));
+    eq("art mod every paragraph with its label", Array.from(b.querySelectorAll(".ar-label")).map((x) => x.textContent), art.paragraphs.map((p) => p.label));
+    eq("art mod the whole text is there", Array.from(b.querySelectorAll(".ar-para p")).map((x) => x.textContent), art.paragraphs.map((p) => p.text));
+    eq("art mod highlighted words are real buttons", wb.length > 0 && wb.every((x) => x.tagName === "BUTTON" && x.type === "button" && x.tabIndex === 0), true);
+    eq("art mod a phrase is one button", wb.some((x) => x.textContent === "per capita"), true);
+    spoken.length = 0;
+    const em = wb.find((x) => x.textContent === "emissions");
+    em.click();
+    eq("art mod a word shows its meaning and part of speech", [$("ar-gloss").textContent.indexOf("排放") !== -1, $("ar-gloss").textContent.indexOf("n.") !== -1, $("ar-gloss").textContent.indexOf("emissions") !== -1], [true, true, true]);
+    eq("art mod a word is spoken", spoken, ["emissions"]);
+    eq("art mod a word is marked", em.classList.contains("is-on"), true);
+    const last = art.paragraphs.length - 1;
+    act("para", last).click();
+    eq("art mod the current paragraph changes and is saved", [saved().read.para, b.querySelector(".ar-para.is-cur").id, act("para", last).getAttribute("aria-pressed")], [last, "ar-p-" + last, "true"]);
+    spoken.length = 0;
+    act("read-para").click();
+    eq("art mod reading says so while it runs", $("ar-read-state").textContent.indexOf(art.paragraphs[last].label) !== -1, true);
+    const wanted = A.speechChunks(art.paragraphs[last].text);
+    await waitFor(() => spoken.length === wanted.length);
+    eq("art mod a paragraph is spoken in full", spoken, wanted);
+    await waitFor(() => $("ar-read-state").textContent === "");
+    b.querySelector('.ar-para[data-v="0"]').click();
+    eq("art mod a tap on a paragraph makes it current", saved().read.para, 0);
+    spoken.length = 0;
+    act("read-para").click();
+    const onlyFirst = spoken.length;
+    act("read-stop").click();
+    await sleep(600);
+    eq("art mod stop stops it", [spoken.length, onlyFirst, $("ar-read-state").textContent], [1, 1, ""]);
+    spoken.length = 0;
+    act("read-para").click();
+    Art.hush();
+    await sleep(600);
+    eq("art mod leaving the tab stops it", spoken.length, 1);
+    spoken.length = 0;
+    act("read-para").click();
+    act("step", 0).click();
+    await sleep(600);
+    eq("art mod leaving the step stops it", [spoken.length, saved().at, !!$("ar-next")], [1, "dict", true]);
+    eq("art mod a finished step can be revisited without losing anything", [saved().dict.score, saved().cloze.score, saved().write.done], [[n - 2, n], [art.cloze.length - 1, art.cloze.length], true]);
+    act("step", 2).click();
+    act("read-done").click();
+
+    /* the unit's result */
+    eq("art mod finishing leaves practice", [saved().read.done, saved().at, views[views.length - 1], Art.inSession()], [true, "sum", "home", false]);
+    const stats = Array.from(b.querySelectorAll(".ar-stats dd")).map((x) => x.textContent);
+    eq("art mod the result has true numbers only", stats, [(n - 2) + " / " + n, (art.cloze.length - 1) + " / " + art.cloze.length, (art.writing.length - 1) + " 句"]);
+    eq("art mod the dictation saw none of this", [s.data.has("ielts-dictation-v1@alice"), App.summary().mastered, App.summary().wrong, App.summary().learned], [false, 0, 0, 0]);
+    act("quit").click();
+    const doneCard = act("open", ID).closest(".ar-card");
+    eq("art mod the card shows all three done", [doneCard.querySelectorAll(".is-done").length, act("open", ID).textContent], [3, "回看"]);
+    eq("art mod leaving clears the open unit", [JSON.parse(s.data.get(KEY)).open, d.activeElement.id], ["", "ar-title"]);
+    Art.resume(false);
+    eq("art mod nothing to resume after leaving", Art.inSession(), false);
+
+    /* export and import, through the dictation's own controls */
+    s.win.URL.createObjectURL = () => { throw new Error("no download from a test"); };
+    t.a.querySelector('[data-act="export"]').click();
+    const exported = d.getElementById("ls-export-text").value, doc = JSON.parse(exported);
+    eq("art mod export includes the articles", doc.articles.articles[ID].dict.score, [n - 2, n]);
+    eq("art mod export still has the dictation part", [doc.app, doc.state.v], ["ielts-dictation", 1]);
+    eq("art mod the settings say what is included", t.a.textContent.indexOf("也包括文章精读") !== -1, true);
+    const before = s.data.get(KEY);
+    const oldDoc = JSON.stringify({ app: "ielts-dictation", exportedAt: "x", state: { v: 1, start: "2026-10-01", u: 1, w: {}, l: {}, last: {} }, prefs: { mode: "audio", accent: "en-GB" } });
+    const oldLine = await importFile(t, oldDoc);
+    eq("art mod an old file says articles stay", oldLine.indexOf("现有的文章进度不变") !== -1, true);
+    eq("art mod an old file imports and leaves articles alone", [JSON.parse(s.data.get("ielts-dictation-v1@alice")).start, s.data.get(KEY)], ["2026-10-01", before]);
+    const garbage = JSON.parse(oldDoc); garbage.articles = { v: 9, articles: "x" };
+    const garbageLine = await importFile(t, JSON.stringify(garbage));
+    eq("art mod an unreadable part changes nothing here", [garbageLine.indexOf("读不出来") !== -1, s.data.get(KEY)], [true, before]);
+    /* a part with nothing usable in it, such as a file saved before its only article was removed or renamed, changes nothing either */
+    for (const part of [{ v: 1 }, { v: 1, articles: { [ID]: 5 } }, { v: 1, articles: { [ID]: {} } }, { v: 1, articles: { "old-removed-id": saved() } }]) {
+      const unusable = JSON.parse(oldDoc); unusable.articles = part;
+      const unusableLine = await importFile(t, JSON.stringify(unusable));
+      eq("art mod an unusable part changes nothing here: " + JSON.stringify(part).slice(0, 40), [unusableLine.indexOf("读不出来") !== -1, s.data.get(KEY)], [true, before]);
+    }
+    const otherStore = A.blankStore(); otherStore.articles[ID] = A.blankRecord(art);
+    const replacing = JSON.parse(oldDoc); replacing.articles = otherStore;
+    const replaceLine = await importFile(t, JSON.stringify(replacing));
+    eq("art mod a file with articles replaces them", [replaceLine.indexOf("1 篇有进度") !== -1, saved().dict.score, act("open", ID).textContent], [true, null, "继续"]);
+    await importFile(t, exported);
+    eq("art mod importing an export brings it all back", [saved().dict.score, saved().write.items[w0.id].t, act("open", ID).textContent], [[n - 2, n], "Sleep has an impact on us.", "回看"]);
+
+    /* restart */
+    act("open", ID).click();
+    act("restart").click();
+    eq("art mod restart asks once more", [act("restart").textContent, saved().dict.score], ["再点一次，清空这篇的进度", [n - 2, n]]);
+    act("restart").click();
+    eq("art mod restart wipes this article", [saved().at, saved().dict.score, saved().cloze.score, saved().write.items, saved().read.done], ["dict", null, null, {}, false]);
+    eq("art mod restart is back at step 1", [steps().map((x) => x.disabled), d.activeElement.id, $("ar-input").value], [[false, true, true], "ar-input", ""]);
+    submit(saved().dict.queue[0]);
+
+    /* clear */
+    const resetBtn = () => t.a.querySelector('[data-act="reset"]');
+    resetBtn().click();
+    resetBtn().click();
+    eq("art mod clear empties the articles too", [JSON.parse(s.data.get(KEY)).articles, Art.inSession(), views[views.length - 1], act("open", ID).textContent], [{}, false, "home", "开始"]);
+    s.frame.remove();
+
+    /* a guest and a user do not meet */
+    const seeded = A.blankStore(); seeded.articles[ID] = A.blankRecord(art);
+    const g = await setup({ local: { "wliu-article-v1": JSON.stringify(seeded) } });
+    eq("art mod a user does not see the guest's articles", g.act("open", ID).textContent, "开始");
+    g.act("open", ID).click();
+    eq("art mod a user's save leaves the guest's alone", g.s.data.get("wliu-article-v1"), JSON.stringify(seeded));
+    g.s.frame.remove();
+    const g2 = await setup({ local: { "wliu-article-v1": JSON.stringify(seeded) } }, { kind: "guest" });
+    eq("art mod a guest uses the plain key", g2.act("open", ID).textContent, "继续");
+    g2.s.frame.remove();
+
+    /* another tab: last write wins, but a list at rest picks it up */
+    const tabs = await setup();
+    tabs.s.data.set(KEY, JSON.stringify(seeded));
+    tabs.s.win.dispatchEvent(new tabs.s.win.StorageEvent("storage", { key: "wliu-article-v1" }));
+    eq("art mod another profile's change is ignored", tabs.act("open", ID).textContent, "开始");
+    tabs.s.win.dispatchEvent(new tabs.s.win.StorageEvent("storage", { key: KEY }));
+    eq("art mod the user's own change is picked up", tabs.act("open", ID).textContent, "继续");
+    tabs.s.frame.remove();
+
+    /* a new article is one data entry and nothing else; a broken one is left out, reported, and breaks nothing */
+    const entry = "data:text/javascript," + encodeURIComponent("var d=window.WLIU_ARTICLE_DATA,a=JSON.parse(JSON.stringify(d.articles[0]));a.id='third-one';a.title='A Third One';d.articles.push(a,{id:'broken-one'});");
+    const more = await sandbox({}, SCRIPTS.slice(0, 5).concat(entry, SCRIPTS.slice(5)));
+    const mw = more.win, md = mw.document, ma = md.createElement("div"), mb = md.createElement("div");
+    md.body.append(ma, mb);
+    mw.WLIU_LISTENING.mount(ma, alice);
+    mw.WLIU_ARTICLE.mount(mb, mw.WLIU_LISTENING, alice);
+    eq("art mod a new data entry gets a card", mb.querySelectorAll(".ar-card").length, A.ARTICLES.length + 1);
+    eq("art mod a broken entry is left out and reported", mb.querySelector("#ar-list .ls-warnbox").textContent.indexOf("1 篇") !== -1, true);
+    mb.querySelector('[data-act="open"][data-v="third-one"]').click();
+    eq("art mod the new article runs and saves under its own id", [mw.WLIU_ARTICLE.inSession(), Object.keys(JSON.parse(more.data.get(KEY)).articles)], [true, ["third-one"]]);
+    more.frame.remove();
+
+    /* whatever is in storage, the page comes up and works */
+    const openJunk = { v: 1, open: "ipat", articles: { ipat: { at: "zzz", dict: { order: 5, queue: "x" }, cloze: [], write: { items: 7 }, read: 9 } } };
+    for (const raw of ["{broken", "null", "[]", "5", '{"v":99}', '{"v":1,"articles":"x"}', '{"v":1,"articles":{"ipat":5,"gone":{}}}', JSON.stringify(openJunk)]) {
+      const m = await setup({ local: { [KEY]: raw } });
+      const seen = [m.b.querySelectorAll(".ar-card").length, m.$("ar-load-warn").hidden, m.s.data.get("wliu-article-v1-recovery@alice")];
+      m.Art.resume(false);
+      if (!m.Art.inSession()) m.act("open", ID).click();
+      eq("art mod malformed store comes up: " + raw.slice(0, 40), [seen, m.Art.inSession(), !!m.$("ar-input")], [[A.ARTICLES.length, false, raw], true, true]);
+      m.s.frame.remove();
+    }
+    const fixed = await setup({ local: { [KEY]: "{broken" } });
+    fixed.act("recovery-discard").click();
+    eq("art mod discarding the raw copy asks once more", fixed.act("recovery-discard").textContent.indexOf("再点一次") !== -1, true);
+    fixed.act("recovery-discard").click();
+    eq("art mod discarding removes it and the warning", [fixed.s.data.has("wliu-article-v1-recovery@alice"), fixed.$("ar-load-warn").hidden], [false, true]);
+    fixed.s.frame.remove();
+
+    /* clearing everything takes the raw copy, which can hold the learner's own sentences, and its warning with it, for this user only */
+    const resetAll = (m) => { const r = () => m.a.querySelector('[data-act="reset"]'); r().click(); r().click(); };
+    const RAW = "wliu-article-v1-recovery@alice";
+    const wiped = await setup({ local: { [KEY]: "{broken", "wliu-article-v1-recovery": "{guest" } });
+    eq("art mod the raw copy is there before a clear", [wiped.s.data.get(RAW), wiped.$("ar-load-warn").hidden], ["{broken", false]);
+    wiped.act("recovery-discard").click();
+    resetAll(wiped);
+    eq("art mod clear removes the raw copy and its warning", [wiped.s.data.has(RAW), wiped.$("ar-load-warn").hidden, wiped.$("ar-load-warn").textContent, wiped.s.data.get(KEY), wiped.s.data.get("wliu-article-v1-recovery")], [false, true, "", JSON.stringify(A.blankStore()), "{guest"]);
+    wiped.s.data.set(RAW, "{later");
+    wiped.s.win.dispatchEvent(new wiped.s.win.StorageEvent("storage", { key: RAW }));
+    eq("art mod a copy made after a clear has to be confirmed afresh", wiped.act("recovery-discard").textContent, "删除这份原始内容");
+    wiped.s.frame.remove();
+    const noCopy = await setup(), api = noCopy.s.win.localStorage, realSet = api.setItem;
+    api.setItem = () => { throw new noCopy.s.win.DOMException("full", "QuotaExceededError"); };
+    noCopy.s.data.set(KEY, "{broken");
+    noCopy.s.win.dispatchEvent(new noCopy.s.win.StorageEvent("storage", { key: KEY }));
+    const noCopyWarned = noCopy.$("ar-load-warn").textContent.indexOf("没能另存") !== -1;
+    api.setItem = realSet;
+    resetAll(noCopy);
+    eq("art mod clear retires the warning that no copy could be made", [noCopyWarned, noCopy.$("ar-load-warn").hidden, noCopy.s.data.get(KEY)], [true, true, JSON.stringify(A.blankStore())]);
+    noCopy.s.frame.remove();
+
+    /* the page promises the raw copy is not overwritten, so a later damaged text joins it */
+    const later = await setup({ local: { [KEY]: "{second", [RAW]: "{first" } });
+    eq("art mod a later damaged text joins the raw copy", later.s.data.get(RAW), "{first\n\n{second");
+    later.s.frame.remove();
+    const sameText = await setup({ local: { [KEY]: "{first", [RAW]: "{first" } });
+    eq("art mod the same damaged text is not copied twice", sameText.s.data.get(RAW), "{first");
+    sameText.s.frame.remove();
+    const olderCopy = await setup({ local: { [RAW]: "{first" } }), olderApi = olderCopy.s.win.localStorage, olderSet = olderApi.setItem;
+    olderApi.setItem = () => { throw new olderCopy.s.win.DOMException("full", "QuotaExceededError"); };
+    olderCopy.s.data.set(KEY, "{second");
+    olderCopy.s.win.dispatchEvent(new olderCopy.s.win.StorageEvent("storage", { key: KEY }));
+    const olderSaid = olderCopy.$("ar-load-warn").textContent;
+    olderApi.setItem = olderSet;
+    eq("art mod a failed copy is reported even with an older one kept", [olderSaid.indexOf("没能另存") !== -1, olderCopy.s.data.get(RAW), !!olderCopy.act("recovery-export")], [true, "{first", true]);
+    olderCopy.s.frame.remove();
+
+    /* with storage blocked it still runs, and says it cannot save */
+    const nos = await setup({ blocked: true });
+    nos.act("open", ID).click();
+    eq("art mod storage blocked still practises and warns", [nos.Art.inSession(), nos.$("ar-save-warn").hidden], [true, false]);
+    resetAll(nos);
+    eq("art mod storage blocked still clears on the page", [nos.Art.inSession(), nos.act("open", ID).textContent, nos.$("ar-load-warn").hidden], [false, "开始", true]);
+    nos.s.frame.remove();
+
+    /* no speech on this device: the page says so and does not pretend */
+    const passAll = (at) => {
+      const r = A.blankRecord(art), st = A.blankStore();
+      while (r.dict.queue.length) A.drillAnswer(r.dict, true);
+      while (r.cloze.queue.length) A.drillAnswer(r.cloze, true);
+      r.write = { cur: "", items: {}, done: true };
+      r.at = at;
+      st.articles[ID] = r;
+      return JSON.stringify(st);
+    };
+    const quiet = await setup({ noSpeech: true, local: { [KEY]: passAll("read") } });
+    quiet.act("open", ID).click();
+    eq("art mod no speech: reading says so", [quiet.act("read-para"), quiet.$("ar-body").textContent.indexOf("不会假装播放") !== -1], [null, true]);
+    eq("art mod no speech: the word bar promises no sound", quiet.$("ar-gloss").textContent.indexOf("读出") === -1, true);
+    quiet.b.querySelector(".ar-word").click();
+    eq("art mod no speech: a word still shows its meaning", [quiet.$("ar-gloss").classList.contains("is-on"), quiet.spoken], [true, []]);
+    quiet.act("restart").click();
+    quiet.act("restart").click();
+    eq("art mod no speech: dictation falls back to Chinese", [quiet.b.querySelector(".ls-play"), !!quiet.b.querySelector(".ls-zh-big")], [null, true]);
+    quiet.submit("");
+    eq("art mod no speech: Enter on an empty box only nudges", [quiet.spoken, quiet.$("ar-box").classList.contains("ls-nudge")], [[], true]);
+    /* a second empty submit inside the wait must not leave the message behind as the normal text */
+    quiet.submit("");
+    await sleep(1500);
+    eq("art mod the nudge goes away after two empty submits", [quiet.$("ar-input").placeholder, quiet.$("ar-box").classList.contains("ls-nudge")], ["在这里拼写", false]);
+    quiet.s.frame.remove();
+    const quietDone = await setup({ noSpeech: true, local: { [KEY]: passAll("cloze") } });
+    quietDone.act("open", ID).click();
+    eq("art mod no speech: the sentence list promises no sound", [quietDone.$("ar-sents-h").textContent, quietDone.act("say-sent")], ["这些句子", null]);
+    quietDone.s.frame.remove();
+    const loudDone = await setup({ local: { [KEY]: passAll("cloze") } });
+    loudDone.act("open", ID).click();
+    eq("art mod with speech the sentence list offers it", [loudDone.$("ar-sents-h").textContent, !!loudDone.act("say-sent")], ["再听一遍这些句子", true]);
+    loudDone.s.frame.remove();
+    const loudRead = await setup({ local: { [KEY]: passAll("read") } });
+    loudRead.act("open", ID).click();
+    eq("art mod with speech the word bar says it reads aloud", loudRead.$("ar-gloss").textContent.indexOf("读出") !== -1, true);
+    loudRead.s.frame.remove();
+
+    /* the last right answer leaves every word passed while its feedback shows, and the box must not count past the end */
+    const lastBox = await setup();
+    lastBox.act("open", ID).click();
+    while (lastBox.saved().dict.queue.length) { lastBox.submit(lastBox.saved().dict.queue[0]); if (lastBox.saved().dict.queue.length) lastBox.next(); }
+    eq("art mod the box never names a word past the last", [lastBox.$("ar-no").textContent, lastBox.$("ar-input").getAttribute("aria-label")], [String(art.words.length), "第 " + art.words.length + " 词，拼写"]);
+    lastBox.s.frame.remove();
+
+    /* a same-sound word from the data, in audio mode only, with the dictation's own wording */
+    const homoEntry = "data:text/javascript," + encodeURIComponent("var a=window.WLIU_ARTICLE_DATA.articles.filter(function(x){return x.id==='ipat'})[0];a.words.forEach(function(w){if(w.en==='impact')w.homo=['impakt']});");
+    const homoS = await sandbox({}, SCRIPTS.slice(0, 5).concat([homoEntry], SCRIPTS.slice(5))), homoDoc = homoS.win.document, homoApp = homoDoc.createElement("div"), homoBox = homoDoc.createElement("div");
+    homoDoc.body.append(homoApp, homoBox);
+    homoS.win.WLIU_LISTENING.mount(homoApp, alice);
+    homoS.win.WLIU_ARTICLE.mount(homoBox, homoS.win.WLIU_LISTENING, alice);
+    homoBox.querySelector('[data-act="open"][data-v="' + ID + '"]').click();
+    const homoDrill = () => JSON.parse(homoS.data.get(KEY)).articles[ID].dict;
+    const homoSubmit = (text) => { homoDoc.getElementById("ar-input").value = text; homoDoc.getElementById("ar-form").requestSubmit(); };
+    while (homoDrill().queue[0] !== "impact") { homoSubmit(homoDrill().queue[0]); homoDoc.getElementById("ar-form").requestSubmit(); }
+    homoSubmit("impakt");
+    const homoFb = homoDoc.getElementById("ar-fb");
+    eq("art mod a same-sound word is right and says which word was wanted", [homoFb.className.indexOf("ls-ok") !== -1, homoFb.textContent.indexOf("同音词，这次算对") !== -1, homoFb.textContent.indexOf("undefined"), homoDrill().miss], [true, true, -1, []]);
+    homoS.frame.remove();
+
+    /* the fill-in says which word it wants, and does not call a different word a misspelling */
+    const atCloze = (first) => {
+      const st = A.blankStore(), r = A.blankRecord(art);
+      while (r.dict.queue.length) A.drillAnswer(r.dict, true);
+      r.at = "cloze";
+      if (first) r.cloze.queue = [first].concat(r.cloze.queue.filter((x) => x !== first));
+      st.articles[ID] = r;
+      return JSON.stringify(st);
+    };
+    const cue = await setup({ local: { [KEY]: atCloze("ipat-c-impact") } });
+    cue.act("open", ID).click();
+    const cueItem = A.findCloze(art, cue.saved().cloze.queue[0]), cueStart = "以 " + cueItem.answers[0].slice(0, 2) + " 开头";
+    eq("art mod the fill-in says where the word comes from and how it starts", [cue.$("ar-prompt").textContent.indexOf("第 1 步听写过的词") !== -1, cue.$("ar-prompt").textContent.indexOf(cueStart) !== -1], [true, true]);
+    eq("art mod the sentence sits right above the answer box", cue.$("ar-prompt").lastElementChild.className, "ar-sentence");
+    await sleep(80);
+    eq("art mod a screen reader hears the cue too", cue.$("ar-live").textContent.indexOf(cueStart) !== -1, true);
+    cue.submit("impressions"); /* enough letters in common that a letter-by-letter correction could be drawn */
+    const farFb = cue.$("ar-fb");
+    eq("art mod a different word is not shown as a misspelling", [farFb.textContent.indexOf("文章原文这里用的是") !== -1, farFb.textContent.indexOf("你写的") !== -1, farFb.querySelectorAll("del, ins, .ls-fix").length, farFb.textContent.indexOf("也可能说得通") !== -1], [true, true, 0, true]);
+    eq("art mod the cue goes once the answer is on show", cue.$("ar-prompt").textContent.indexOf("第 1 步听写过的词"), -1);
+    cue.next();
+    const cueNear = A.findCloze(art, cue.saved().cloze.queue[0]);
+    cue.submit(cueNear.answers[0] + "x");
+    eq("art mod a slip is still corrected letter by letter", [!!cue.$("ar-fb").querySelector(".ls-fix"), cue.$("ar-fb").textContent.indexOf("也可能说得通")], [true, -1]);
+    cue.s.frame.remove();
+
+    const formSlip = await setup({ local: { [KEY]: atCloze("ipat-c-stress") } });
+    formSlip.act("open", ID).click();
+    formSlip.submit("stress");
+    eq("art mod the word in the wrong form is corrected, not called another word", [(formSlip.$("ar-fb").querySelector(".ls-fix") || {}).textContent, formSlip.$("ar-fb").textContent.indexOf("也可能说得通")], ["stressing", -1]);
+    /* back to a fill-in whose feedback is showing: its box is hidden, and Enter has to go on from the button */
+    formSlip.$("ar-submit").blur();
+    formSlip.Art.resume(true);
+    eq("art mod coming back to a fill-in's feedback keeps Enter working", formSlip.d.activeElement.id, "ar-submit");
+    formSlip.s.frame.remove();
+
+    /* what a shared sentence promises depends on whether this device can speak */
+    const sharedItem = art.cloze.find((c) => art.cloze.some((o) => o !== c && A.clozeSentence(o) === A.clozeSentence(c)));
+    const quietShared = await setup({ noSpeech: true, local: { [KEY]: atCloze(sharedItem.id) } });
+    quietShared.act("open", ID).click();
+    quietShared.submit(sharedItem.answers[0]);
+    eq("art mod no speech: a shared sentence promises no sound", [quietShared.$("ar-prompt").textContent.indexOf("都答完后可以看整句") !== -1, quietShared.$("ar-prompt").textContent.indexOf("听整句")], [true, -1]);
+    quietShared.s.frame.remove();
+    const loudShared = await setup({ local: { [KEY]: atCloze(sharedItem.id) } });
+    loudShared.act("open", ID).click();
+    loudShared.submit(sharedItem.answers[0]);
+    eq("art mod with speech a shared sentence offers it for later", loudShared.$("ar-prompt").textContent.indexOf("听整句") !== -1, true);
+    loudShared.s.frame.remove();
+
+    /* deleting the raw copy is final, even if nothing was saved since it was made */
+    const dmgText = JSON.stringify({ v: 1, articles: { ipat: { write: { items: { gone: { t: "my private sentence" } } } } } });
+    const dmg = await setup({ local: { [KEY]: dmgText } });
+    eq("art mod damaged text is copied aside", dmg.s.data.get(RAW), dmgText);
+    dmg.act("recovery-discard").click();
+    dmg.act("recovery-discard").click();
+    eq("art mod deleting the copy removes the text everywhere", [dmg.s.data.has(RAW), dmg.s.data.get(KEY).indexOf("my private sentence"), dmg.$("ar-load-warn").hidden], [false, -1, true]);
+    const dmgAgain = await setup({ local: Object.fromEntries(dmg.s.data) });
+    eq("art mod the delete lasts after a reload", [dmgAgain.s.data.has(RAW), dmgAgain.$("ar-load-warn").hidden], [false, true]);
+    dmg.s.frame.remove();
+    dmgAgain.s.frame.remove();
+
+    /* the meaning stays close to the box a phone keyboard leaves on screen */
+    const noteBox = await setup({ local: { [KEY]: passAll("write") } });
+    noteBox.act("open", ID).click();
+    noteBox.act("edit", art.writing[0].id).click();
+    eq("art mod the note on grammar sits with the box, not between the meaning and the box", [noteBox.$("ar-w-text").closest("section").textContent.indexOf("判断不了语法") !== -1, noteBox.b.querySelector(".ar-facts").closest("section").textContent.indexOf("判断不了语法")], [true, -1]);
+    noteBox.s.frame.remove();
+
+    /* a data script that did not load is not damaged progress */
+    const noDataStore = passAll("read"), noDataS = await sandbox({ local: { [KEY]: noDataStore } }, SCRIPTS.filter((x) => x.indexOf("article-data") === -1)), noDataDoc = noDataS.win.document;
+    const noDataApp = noDataDoc.createElement("div"), noDataBox = noDataDoc.createElement("div");
+    noDataDoc.body.append(noDataApp, noDataBox);
+    noDataS.win.WLIU_LISTENING.mount(noDataApp, alice);
+    let noDataThrew = false;
+    try { noDataS.win.WLIU_ARTICLE.mount(noDataBox, noDataS.win.WLIU_LISTENING, alice); } catch (e) { noDataThrew = true; }
+    eq("art mod without its data the section does not start and calls nothing damaged", [noDataThrew, noDataS.data.has(RAW), noDataS.data.get(KEY), noDataBox.innerHTML], [true, false, noDataStore, ""]);
+    noDataS.frame.remove();
+
+    /* a tall paragraph chosen by its letter has to open at its start */
+    const paraBox = await setup({ local: { [KEY]: passAll("read") } });
+    paraBox.act("open", ID).click();
+    const paraCalls = [];
+    paraBox.s.win.Element.prototype.scrollIntoView = function (o) { paraCalls.push([this.id, o && o.block]); };
+    paraBox.b.querySelector('#ar-toolbar [data-act="para"][data-v="2"]').click();
+    eq("art mod a paragraph's letter opens it at its start", paraCalls, [["ar-p-2", "start"]]);
+    paraBox.s.frame.remove();
+
+    /* some engines drop what is queued in the tick of a cancel, and phones want the first word inside the press */
+    const eng = await setup(), engLog = [], engSynth = eng.s.win.speechSynthesis;
+    engSynth.cancel = () => engLog.push("cancel");
+    engSynth.speak = (u) => { engLog.push("speak " + u.text); if (u.onstart) u.onstart(); if (u.onend) u.onend(); };
+    eng.act("open", ID).click();
+    const engFirst = eng.saved().dict.queue[0];
+    eq("art mod an idle engine is not cancelled, so the word starts inside the press", engLog, ["speak " + engFirst]);
+    eng.submit(engFirst);
+    engLog.length = 0;
+    engSynth.speaking = true;
+    eng.next();
+    const engSecond = eng.saved().dict.queue[0];
+    eq("art mod after cutting a word off the next one waits", [engLog.indexOf("cancel") !== -1, engLog.indexOf("speak " + engSecond)], [true, -1]);
+    engSynth.speaking = false;
+    await sleep(90);
+    eq("art mod the next word then plays", engLog[engLog.length - 1], "speak " + engSecond);
+    eng.s.frame.remove();
+
+    /* an utterance cut off from outside never reports back */
+    const stuck = await setup({ local: { [KEY]: passAll("read") } }), stuckTimeout = stuck.s.win.setTimeout.bind(stuck.s.win);
+    stuck.s.win.speechSynthesis.speak = (u) => { if (u.onstart) u.onstart(); };
+    stuck.act("open", ID).click();
+    stuck.s.win.setTimeout = (fn, ms) => stuckTimeout(fn, ms >= 9000 ? 30 : ms);
+    stuck.act("read-para").click();
+    eq("art mod reading says so while it runs", stuck.$("ar-read-state").textContent, "正在朗读 " + art.paragraphs[0].label + " 段");
+    await sleep(150);
+    eq("art mod reading that never reports back stops saying so", stuck.$("ar-read-state").textContent, "");
+    stuck.s.frame.remove();
+
+    /* the number belongs to the word on screen until the next one comes */
+    const numbered = await setup();
+    numbered.act("open", ID).click();
+    numbered.submit(numbered.saved().dict.queue[0]);
+    eq("art mod the number stays with the word during its feedback", [numbered.$("ar-no").textContent, numbered.$("ar-input").getAttribute("aria-label")], ["1", "第 1 词，拼写"]);
+    numbered.next();
+    eq("art mod the number moves on with the next word", numbered.$("ar-no").textContent, "2");
+    numbered.s.frame.remove();
+
+    /* the listening mode can change while a unit waits under another tab */
+    const back = await setup();
+    back.act("open", ID).click();
+    back.spoken.length = 0;
+    back.App.setMode("zh");
+    back.Art.resume(true);
+    eq("art mod coming back shows the current mode and says nothing", [!!back.b.querySelector(".ls-zh-big"), back.b.querySelector(".ls-play"), back.spoken], [true, null, []]);
+    back.s.frame.remove();
+
+    /* a phone keyboard opening over the box */
+    const vv = Object.assign(new EventTarget(), { width: 375, height: 700, offsetTop: 0, scale: 1 }), kb = await setup({ viewport: vv }), kbCalls = [];
+    kb.act("open", ID).click();
+    kb.s.win.Element.prototype.scrollIntoView = function () { kbCalls.push(this.id); };
+    const resizeTo = (h, scale) => { vv.height = h; vv.scale = scale; vv.dispatchEvent(new Event("resize")); };
+    resizeTo(400, 1);
+    eq("art mod a keyboard opening brings the answer box back", kbCalls, ["ar-form"]);
+    resizeTo(700, 1);
+    kbCalls.length = 0;
+    resizeTo(350, 2);
+    eq("art mod a pinch zoom moves nothing", kbCalls, []);
+    resizeTo(700, 1);
+    kb.$("ar-input").blur();
+    resizeTo(400, 1);
+    eq("art mod nor does a keyboard opened for something else", kbCalls, []);
+    resizeTo(700, 1);
+    vv.width = 700;
+    vv.height = 375;
+    vv.dispatchEvent(new Event("resize"));
+    kb.$("ar-input").focus();
+    resizeTo(375, 1);
+    eq("art mod turning the phone is not a keyboard", kbCalls, []);
+    kb.s.frame.remove();
+
+    /* speech that fails is reported, with the dictation's own way out */
+    const failing = (x) => { x.s.win.speechSynthesis.speak = (u) => { if (u.onerror) u.onerror({ error: "synthesis-failed" }); }; };
+    const mute = await setup();
+    failing(mute);
+    mute.act("open", ID).click();
+    eq("art mod failed speech is reported in the prompt", !!mute.act("mode-zh"), true);
+    mute.act("mode-zh").click();
+    eq("art mod switching to Chinese is the site's own setting", [!!mute.b.querySelector(".ls-zh-big"), JSON.parse(mute.s.data.get("ielts-dictation-prefs@alice")).mode, mute.App.summary().mode], [true, "zh", "zh"]);
+    mute.s.frame.remove();
+    const muteRead = await setup({ local: { [KEY]: passAll("read") } });
+    failing(muteRead);
+    muteRead.act("open", ID).click();
+    muteRead.act("read-para").click();
+    eq("art mod failed reading is reported and does not claim to run", [muteRead.$("ar-speech-warn").hidden, muteRead.$("ar-read-state").textContent], [false, ""]);
+    muteRead.s.frame.remove();
+  }
+
+  /* js/site.js on the real page. For a few minutes after a release the page and its scripts can come from different versions, because each is cached on its own. */
+  async function shellTests() {
+    if (location.protocol === "file:") return;
+    const page = new DOMParser().parseFromString(await (await fetch("../index.html", { cache: "no-store" })).text(), "text/html");
+    eq("shell only a script that can run the article tab reveals it", page.querySelector('#wl-tabs [data-tab="article"]').hidden, true);
+    page.querySelectorAll("script").forEach((x) => x.remove());
+    const BASE = ["../js/profile.js", "../listening/data.js", "../listening/core.js", "../listening/listening.js", "../listening/summary-data.js", "../listening/summary-core.js", "../listening/summary.js"];
+    const ARTICLE = ["../listening/article-data.js", "../listening/article-core.js", "../listening/article.js"];
+    const guest = async (body, scripts, local) => {
+      const fill = "data:text/javascript," + encodeURIComponent("document.body.innerHTML=" + JSON.stringify(body));
+      const s = await sandbox({ local }, [fill].concat(scripts, ["../js/site.js"])), d = s.win.document, errors = [];
+      s.win.addEventListener("error", (e) => errors.push(e.message));
+      d.getElementById("wl-guest").click();
+      await waitFor(() => !d.documentElement.classList.contains("wl-entry-open"));
+      return { s, d, errors, tabs: () => Array.from(d.querySelectorAll("#wl-tabs [data-tab]")).filter((b) => !b.hidden).map((b) => b.dataset.tab) };
+    };
+    const whole = await guest(page.body.innerHTML, BASE.concat(ARTICLE));
+    eq("shell the page offers all three sections", [whole.tabs(), whole.errors], [["dictation", "summary", "article"], []]);
+    whole.d.querySelector('#wl-tabs [data-tab="article"]').click();
+    eq("shell the article tab opens its section", [whole.d.getElementById("wl-article").hidden, whole.d.getElementById("wl-listen").hidden, !!whole.d.querySelector("#wl-article .ar-card"), whole.errors], [false, true, true, []]);
+    whole.s.frame.remove();
+
+    /* an index.html cached from before the tab existed, with today's js/site.js */
+    const oldPage = page.cloneNode(true);
+    oldPage.querySelector('#wl-tabs [data-tab="article"]').remove();
+    oldPage.getElementById("wl-article").remove();
+    const stale = await guest(oldPage.body.innerHTML, BASE);
+    eq("shell an old cached page still lets the visitor in", [stale.tabs(), stale.d.getElementById("wl-user-name").textContent, stale.errors], [["dictation", "summary"], "访客", []]);
+    stale.d.querySelector('#wl-tabs [data-tab="summary"]').click();
+    eq("shell its other section still opens", [stale.d.getElementById("wl-summary").hidden, stale.d.getElementById("wl-listen").hidden, stale.errors], [false, true, []]);
+    stale.s.frame.remove();
+
+    /* the article data did not load: no tab, and saved progress is not called damaged */
+    const guestKey = window.WLIU_PROFILE.keyFor(A.KEY, { kind: "guest" }), guestRaw = window.WLIU_PROFILE.keyFor(A.RECOVERY_KEY, { kind: "guest" }), kept = JSON.stringify({ v: 1, open: "", articles: { ipat: A.blankRecord(A.BY_ID.get("ipat")) } });
+    const noData = await guest(page.body.innerHTML, BASE.concat(ARTICLE.slice(1)), { [guestKey]: kept });
+    eq("shell without the data the tab goes away and nothing is touched", [noData.tabs(), noData.errors, noData.s.data.has(guestRaw), noData.s.data.get(guestKey)], [["dictation", "summary"], [], false, kept]);
+    noData.s.frame.remove();
+  }
+
   function report(final) {
     const sum = document.getElementById("sum");
     sum.textContent = (fail ? "FAILED " : final ? "PASSED " : "RUNNING ") + pass + " passed, " + fail + " failed";
@@ -680,7 +1652,7 @@
   }
   report(false);
   (async () => {
-    for (const step of [profileStoreTests, moduleTests]) {
+    for (const step of [profileStoreTests, moduleTests, articleModuleTests, shellTests]) {
       try { await step(); } catch (e) { eq(step.name + " ran to the end", String(e), "no error"); }
       report(false);
     }
